@@ -1,0 +1,60 @@
+<UserControl x:Class="FileHub.UI.Controls.FileListControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:FileHub.UI.Controls"
+             xmlns:common="clr-namespace:FileHub.UI.Common"
+             Focusable="False">
+    <UserControl.Resources>
+        <ItemsPanelTemplate x:Key="DetailsPanel">
+            <VirtualizingStackPanel/>
+        </ItemsPanelTemplate>
+        <ItemsPanelTemplate x:Key="TilePanel">
+            <controls:VirtualizingWrapPanel ItemWidth="{Binding TileWidth, RelativeSource={RelativeSource AncestorType=controls:FileListControl}}"
+                                            ItemHeight="{Binding TileHeight, RelativeSource={RelativeSource AncestorType=controls:FileListControl}}"/>
+        </ItemsPanelTemplate>
+
+        <DataTemplate x:Key="NameCell" DataType="{x:Type common:FileItem}">
+            <StackPanel Orientation="Horizontal">
+                <Image Source="{Binding Icon}" Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
+                <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+        </DataTemplate>
+        <DataTemplate x:Key="TextCell"><TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/></DataTemplate>
+
+        <DataTemplate x:Key="TileTemplate" DataType="{x:Type common:FileItem}">
+            <StackPanel Width="{Binding TileWidth, RelativeSource={RelativeSource AncestorType=controls:FileListControl}}">
+                <Image Source="{Binding Icon}" Width="{Binding IconPx}" Height="{Binding IconPx}" Margin="0,6,0,4" HorizontalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
+                <TextBlock Text="{Binding DisplayName}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" TextAlignment="Center" MaxHeight="36" Margin="4,0" LineHeight="17" LineStackingStrategy="BlockLineHeight" ToolTip="{Binding FullPath}"/>
+            </StackPanel>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid>
+        <ListView x:Name="List" SelectionMode="Extended"
+                  ItemContainerStyle="{StaticResource DetailsItemStyle}"
+                  ItemsPanel="{StaticResource DetailsPanel}"
+                  AllowDrop="True"
+                  SelectionChanged="List_SelectionChanged"
+                  PreviewMouseLeftButtonDown="List_PreviewMouseLeftButtonDown"
+                  PreviewMouseLeftButtonUp="List_PreviewMouseLeftButtonUp"
+                  MouseMove="List_MouseMove"
+                  MouseDoubleClick="List_MouseDoubleClick"
+                  MouseRightButtonUp="List_MouseRightButtonUp"
+                  PreviewKeyDown="List_PreviewKeyDown"
+                  TextInput="List_TextInput"
+                  DragOver="List_DragOver" Drop="List_Drop"
+                  KeyboardNavigation.TabNavigation="Once">
+            <ListView.View>
+                <GridView x:Name="Grid" AllowsColumnReorder="True"/>
+            </ListView.View>
+        </ListView>
+
+        <TextBlock x:Name="EmptyText" Text="This folder is empty." Style="{StaticResource Secondary}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" IsHitTestVisible="False"/>
+
+        <Popup x:Name="RenamePopup" StaysOpen="True" AllowsTransparency="True" Placement="Relative" PopupAnimation="None">
+            <Border Background="{DynamicResource InputBackgroundBrush}" BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1" CornerRadius="3">
+                <TextBox x:Name="RenameBox" BorderThickness="0" MinWidth="160" MinHeight="24" Padding="4,2" KeyDown="RenameBox_KeyDown" LostKeyboardFocus="RenameBox_LostFocus"/>
+            </Border>
+        </Popup>
+    </Grid>
+</UserControl>

@@ -1,0 +1,64 @@
+<UserControl x:Class="FileHub.UI.Hub.ContextMenuPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24,20" MaxWidth="1000" HorizontalAlignment="Left">
+            <TextBlock Text="Context menu" Style="{StaticResource Title}"/>
+
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Windows shell items" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Show the standard Windows context menu entries" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <ComboBox x:Name="ShellMode" Width="220">
+                            <ComboBoxItem Content="Inline (merged into the menu)" Tag="Inline"/>
+                            <ComboBoxItem Content="In a 'Show more options' submenu" Tag="Submenu"/>
+                            <ComboBoxItem Content="Hidden" Tag="Hidden"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <TextBlock Text="Hide shell items whose label contains (one per line)" Style="{StaticResource Caption}" Margin="0,10,0,4"/>
+                    <TextBox x:Name="HiddenBox" AcceptsReturn="True" MinHeight="60" VerticalScrollBarVisibility="Auto"/>
+                    <TextBlock Text="Tip: hold Shift while right-clicking to include the extended (Shift) verbs from Windows." Style="{StaticResource Caption}" Margin="0,8,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Built-in FileHub items" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
+                    <CheckBox x:Name="BuiltIns" Content="Cut / Copy / Paste / Rename / Delete"/>
+                    <CheckBox x:Name="Terminal" Content="Open in Terminal"/>
+                    <CheckBox x:Name="CopyPath" Content="Copy as path"/>
+                    <CheckBox x:Name="OpenHub" Content="Search in Hub"/>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Custom items" Style="{StaticResource SectionHeader}" Margin="0,0,0,4"/>
+                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,0,0,8"
+                               Text="Placeholders for Arguments:  %1 = selected item   %* = all selected (quoted)   %D = folder   %N = file name.  Extensions: semicolon list without dots, empty = all."/>
+                    <DataGrid x:Name="Grid" MinHeight="160" MaxHeight="420" CanUserAddRows="False" SelectionMode="Single">
+                        <DataGrid.Columns>
+                            <DataGridCheckBoxColumn Header="On" Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" Width="40"/>
+                            <DataGridTextColumn Header="Label" Binding="{Binding Label, UpdateSourceTrigger=PropertyChanged}" Width="160"/>
+                            <DataGridTextColumn Header="Program / command" Binding="{Binding Command, UpdateSourceTrigger=PropertyChanged}" Width="220"/>
+                            <DataGridTextColumn Header="Arguments" Binding="{Binding Arguments, UpdateSourceTrigger=PropertyChanged}" Width="160"/>
+                            <DataGridTextColumn Header="Extensions" Binding="{Binding Extensions, UpdateSourceTrigger=PropertyChanged}" Width="130"/>
+                            <DataGridCheckBoxColumn Header="Files" Binding="{Binding ForFiles, UpdateSourceTrigger=PropertyChanged}" Width="50"/>
+                            <DataGridCheckBoxColumn Header="Folders" Binding="{Binding ForFolders, UpdateSourceTrigger=PropertyChanged}" Width="60"/>
+                            <DataGridCheckBoxColumn Header="Background" Binding="{Binding ForBackground, UpdateSourceTrigger=PropertyChanged}" Width="90"/>
+                            <DataGridCheckBoxColumn Header="Admin" Binding="{Binding RunAsAdmin, UpdateSourceTrigger=PropertyChanged}" Width="55"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button Content="Add item" Click="Add_Click"/>
+                        <Button Content="Browse program…" Click="Browse_Click" Margin="8,0,0,0"/>
+                        <Button Content="Remove selected" Click="Remove_Click" Margin="8,0,0,0"/>
+                        <Button Content="Move up" Click="Up_Click" Margin="8,0,0,0"/>
+                        <Button Content="Move down" Click="Down_Click" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

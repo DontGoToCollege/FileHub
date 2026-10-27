@@ -1,0 +1,78 @@
+<UserControl x:Class="FileHub.UI.Hub.IndexPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24,20" MaxWidth="900" HorizontalAlignment="Left">
+            <TextBlock Text="Index &amp; database" Style="{StaticResource Title}"/>
+
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Status" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
+                    <TextBlock x:Name="StatusText" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="StatsText" Style="{StaticResource Secondary}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                    <TextBlock x:Name="ContentStatusText" Style="{StaticResource Secondary}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <Button Content="Rebuild index now" Style="{StaticResource AccentButton}" Click="Rebuild_Click"/>
+                        <Button Content="Save snapshot" Click="Save_Click" Margin="8,0,0,0"/>
+                        <Button Content="Re-scan content &amp; metadata" Click="Rescan_Click" Margin="8,0,0,0"/>
+                        <Button Content="Open data folder" Click="OpenData_Click" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="What to index" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
+                    <CheckBox x:Name="AllFixed" Content="All fixed (internal) drives"/>
+                    <CheckBox x:Name="Removable" Content="Removable drives (USB) too"/>
+                    <TextBlock Text="Additional folders / roots (one per line)" Style="{StaticResource Caption}" Margin="0,8,0,4"/>
+                    <TextBox x:Name="RootsBox" AcceptsReturn="True" MinHeight="60" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto"/>
+                    <TextBlock Text="Exclude folder names or full paths (one per line)" Style="{StaticResource Caption}" Margin="0,8,0,4"/>
+                    <TextBox x:Name="ExcludesBox" AcceptsReturn="True" MinHeight="60" TextWrapping="NoWrap" VerticalScrollBarVisibility="Auto"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <CheckBox x:Name="RebuildStartup" Content="Full rebuild at every startup"/>
+                        <TextBlock Text="Auto rebuild every" VerticalAlignment="Center" Margin="24,0,6,0"/>
+                        <TextBox x:Name="IntervalBox" Width="50" MinHeight="26" Padding="4,2"/>
+                        <TextBlock Text="hours (changes are tracked live in between)" VerticalAlignment="Center" Margin="6,0,0,0" Style="{StaticResource Secondary}"/>
+                    </StackPanel>
+                    <TextBlock Text="Changes to roots/excludes take effect on the next rebuild." Style="{StaticResource Caption}" Margin="0,8,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="File contents (full-text search with content:)" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
+                    <CheckBox x:Name="ContentOn" Content="Index text inside files (txt, code, Office documents…)"/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Skip files larger than" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBox x:Name="MaxMbBox" Width="50" MinHeight="26" Padding="4,2"/>
+                        <TextBlock Text="MB" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                    </StackPanel>
+                    <TextBlock Text="Extensions" Style="{StaticResource Caption}" Margin="0,8,0,4"/>
+                    <TextBox x:Name="ContentExtBox" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="50"/>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Metadata (properties like title, author, dimensions, duration — searchable with meta:)" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
+                    <CheckBox x:Name="MetaOn" Content="Extract Windows properties from media and documents"/>
+                    <TextBlock Text="Extensions" Style="{StaticResource Caption}" Margin="0,8,0,4"/>
+                    <TextBox x:Name="MetaExtBox" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="50"/>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Thumbnail cache" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
+                    <CheckBox x:Name="ThumbsOn" Content="Keep generated thumbnails in the database (fast reopen, like Windows thumbcache)"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <TextBlock x:Name="ThumbStats" Style="{StaticResource Secondary}" VerticalAlignment="Center"/>
+                        <Button Content="Clear thumbnail cache" Click="ClearThumbs_Click" Margin="12,0,0,0"/>
+                        <Button Content="Clear content index" Click="ClearContent_Click" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
