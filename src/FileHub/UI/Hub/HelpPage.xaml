@@ -1,0 +1,56 @@
+<UserControl x:Class="FileHub.UI.Hub.HelpPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <Style x:Key="Code" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+            <Setter Property="FontFamily" Value="Cascadia Mono, Consolas"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="Margin" Value="0,2"/>
+        </Style>
+    </UserControl.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24,20" MaxWidth="960" HorizontalAlignment="Left">
+            <TextBlock Text="Search syntax" Style="{StaticResource Title}"/>
+            <TextBlock Style="{StaticResource Secondary}" TextWrapping="Wrap" Text="Searches run against the in-memory index (every file and folder name on your drives) and are live as you type. Words are matched anywhere in the name, case-insensitive, all words must match. Add filters to narrow down."/>
+
+            <Border Style="{StaticResource Card}" Margin="0,16,0,12">
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="300"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                        <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Style="{StaticResource Code}" Text="report budget"/><TextBlock Grid.Row="0" Grid.Column="1" Text="names containing both words" Margin="0,2"/>
+                    <TextBlock Grid.Row="1" Style="{StaticResource Code}" Text="&quot;exact phrase&quot;"/><TextBlock Grid.Row="1" Grid.Column="1" Text="phrase with spaces" Margin="0,2"/>
+                    <TextBlock Grid.Row="2" Style="{StaticResource Code}" Text="jpg|png     !temp     (a|b) c"/><TextBlock Grid.Row="2" Grid.Column="1" Text="OR, NOT, grouping" Margin="0,2"/>
+                    <TextBlock Grid.Row="3" Style="{StaticResource Code}" Text="*.mp4    IMG_????.jpg"/><TextBlock Grid.Row="3" Grid.Column="1" Text="wildcards match the whole name" Margin="0,2"/>
+                    <TextBlock Grid.Row="4" Style="{StaticResource Code}" Text="ext:jpg;png;gif"/><TextBlock Grid.Row="4" Grid.Column="1" Text="extensions" Margin="0,2"/>
+                    <TextBlock Grid.Row="5" Style="{StaticResource Code}" Text="type:picture|video|audio|document|code|archive|executable|folder|file"/><TextBlock Grid.Row="5" Grid.Column="1" Text="type groups (folder: / file: also work)" Margin="0,2"/>
+                    <TextBlock Grid.Row="6" Style="{StaticResource Code}" Text="size:&gt;10mb   size:1mb..5mb   size:empty|tiny|small|medium|large|huge|gigantic"/><TextBlock Grid.Row="6" Grid.Column="1" Text="size filters" Margin="0,2"/>
+                    <TextBlock Grid.Row="7" Style="{StaticResource Code}" Text="dm:today  dm:thisweek  dm:2024-05  dm:&gt;2024-01-01  dm:last30days"/><TextBlock Grid.Row="7" Grid.Column="1" Text="date modified (dc: = date created)" Margin="0,2"/>
+                    <TextBlock Grid.Row="8" Style="{StaticResource Code}" Text="path:projects\src"/><TextBlock Grid.Row="8" Grid.Column="1" Text="match text in the full path (a \ in a term does this too)" Margin="0,2"/>
+                    <TextBlock Grid.Row="9" Style="{StaticResource Code}" Text="infolder:&quot;C:\Users\me\Documents&quot;   parent:C:\Temp"/><TextBlock Grid.Row="9" Grid.Column="1" Text="inside a folder tree / directly inside a folder" Margin="0,2"/>
+                    <TextBlock Grid.Row="10" Style="{StaticResource Code}" Text="regex:^IMG_\d{4}\.jpg$"/><TextBlock Grid.Row="10" Grid.Column="1" Text="regular expression (or turn on the .* toggle)" Margin="0,2"/>
+                    <TextBlock Grid.Row="11" Style="{StaticResource Code}" Text="startwith:draft   endwith:_final   case:README   ww:log"/><TextBlock Grid.Row="11" Grid.Column="1" Text="prefix, suffix, case-sensitive, whole word" Margin="0,2"/>
+                    <TextBlock Grid.Row="12" Style="{StaticResource Code}" Text="content:&quot;quarterly revenue&quot;"/><TextBlock Grid.Row="12" Grid.Column="1" Text="full-text search inside indexed documents" Margin="0,2"/>
+                    <TextBlock Grid.Row="13" Style="{StaticResource Code}" Text="meta:canon   meta:&quot;Taylor&quot;"/><TextBlock Grid.Row="13" Grid.Column="1" Text="extracted properties (camera, artist, title, author, tags…)" Margin="0,2"/>
+                    <TextBlock Grid.Row="14" Style="{StaticResource Code}" Text="attrib:h   attrib:rs   empty:"/><TextBlock Grid.Row="14" Grid.Column="1" Text="attributes (h s r a c e l), empty files" Margin="0,2"/>
+                    <TextBlock Grid.Row="15" Style="{StaticResource Code}" Text="len:&gt;60"/><TextBlock Grid.Row="15" Grid.Column="1" Text="name length" Margin="0,2"/>
+                    <TextBlock Grid.Row="16" Style="{StaticResource Code}" Text="type:video size:&gt;1gb dm:thisyear !sample"/><TextBlock Grid.Row="16" Grid.Column="1" Text="combine anything" Margin="0,2"/>
+                </Grid>
+            </Border>
+
+            <TextBlock Text="Keyboard shortcuts" Style="{StaticResource SectionHeader}"/>
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource Code}" Text="Win               FileHub start menu (when enabled)      Win+E   FileHub Explorer      Ctrl+Alt+Space   File Hub"/>
+                    <TextBlock Style="{StaticResource Code}" Text="Ctrl+T / Ctrl+W   new / close tab        Ctrl+Tab  next tab       Ctrl+L  address bar      Ctrl+F  search box"/>
+                    <TextBlock Style="{StaticResource Code}" Text="Alt+Left/Right    back / forward         Alt+Up    up             Backspace  up (in list)   F5  refresh"/>
+                    <TextBlock Style="{StaticResource Code}" Text="Enter  open       Ctrl+Enter (Hub) open containing folder     Alt+Enter  properties     F2  rename"/>
+                    <TextBlock Style="{StaticResource Code}" Text="Ctrl+C/X/V  copy/cut/paste    Del  recycle    Shift+Del  delete permanently    Ctrl+Shift+N  new folder    Ctrl+Shift+C  copy path"/>
+                    <TextBlock Style="{StaticResource Code}" Text="Ctrl+Wheel  change icon size     Alt+P  preview pane     Shift+Right-click  extended Windows menu"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

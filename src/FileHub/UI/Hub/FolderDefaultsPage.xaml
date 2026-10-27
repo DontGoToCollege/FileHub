@@ -1,0 +1,69 @@
+<UserControl x:Class="FileHub.UI.Hub.FolderDefaultsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24,20" MaxWidth="900" HorizontalAlignment="Left">
+            <TextBlock Text="Folder views &amp; Explorer" Style="{StaticResource Title}"/>
+
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Defaults for folders without a saved view" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="160"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                        <TextBlock Text="View" VerticalAlignment="Center"/>
+                        <ComboBox x:Name="ViewCombo" Grid.Column="1" Width="220" HorizontalAlignment="Left" Margin="0,3">
+                            <ComboBoxItem Content="Details" Tag="Details"/><ComboBoxItem Content="List" Tag="List"/><ComboBoxItem Content="Small icons" Tag="SmallIcons"/>
+                            <ComboBoxItem Content="Medium icons" Tag="MediumIcons"/><ComboBoxItem Content="Large icons" Tag="LargeIcons"/><ComboBoxItem Content="Extra large icons" Tag="ExtraLargeIcons"/>
+                        </ComboBox>
+                        <TextBlock Grid.Row="1" Text="Sort by" VerticalAlignment="Center"/>
+                        <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Margin="0,3">
+                            <ComboBox x:Name="SortCombo" Width="220">
+                                <ComboBoxItem Content="Name" Tag="Name"/><ComboBoxItem Content="Date modified" Tag="Modified"/><ComboBoxItem Content="Type" Tag="Type"/><ComboBoxItem Content="Size" Tag="Size"/><ComboBoxItem Content="Date created" Tag="Created"/>
+                            </ComboBox>
+                            <CheckBox x:Name="SortDesc" Content="Descending" Margin="12,0,0,0"/>
+                        </StackPanel>
+                        <TextBlock Grid.Row="2" Text="Columns (Details)" VerticalAlignment="Top" Margin="0,6,0,0"/>
+                        <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,3">
+                            <CheckBox Content="Name" IsChecked="True" IsEnabled="False" Margin="0,0,12,0"/>
+                            <CheckBox x:Name="ColModified" Content="Date modified" Margin="0,0,12,0"/>
+                            <CheckBox x:Name="ColType" Content="Type" Margin="0,0,12,0"/>
+                            <CheckBox x:Name="ColSize" Content="Size" Margin="0,0,12,0"/>
+                            <CheckBox x:Name="ColCreated" Content="Date created" Margin="0,0,12,0"/>
+                            <CheckBox x:Name="ColExt" Content="Extension" Margin="0,0,12,0"/>
+                            <CheckBox x:Name="ColAttr" Content="Attributes"/>
+                        </StackPanel>
+                        <TextBlock Grid.Row="3" Text="Start location" VerticalAlignment="Center"/>
+                        <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Margin="0,3">
+                            <TextBox x:Name="StartBox" Width="360" ToolTip="::Home, ::ThisPC or a folder path"/>
+                            <Button Content="Browse…" Click="BrowseStart_Click" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Grid>
+                    <CheckBox x:Name="FoldersFirst" Content="Always list folders before files" Margin="0,8,0,0"/>
+                    <CheckBox x:Name="ShowHidden" Content="Show hidden items"/>
+                    <CheckBox x:Name="ShowSystem" Content="Show protected operating system files"/>
+                    <CheckBox x:Name="ShowExt" Content="Show file name extensions"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <TextBlock Text="Terminal command" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBox x:Name="TerminalBox" Width="360" ToolTip="%1 is replaced with the folder"/>
+                    </StackPanel>
+                    <TextBlock Text="Quick access folders (one per line, shown in Home and the navigation pane)" Style="{StaticResource Caption}" Margin="0,10,0,4"/>
+                    <TextBox x:Name="QuickBox" AcceptsReturn="True" MinHeight="60" VerticalScrollBarVisibility="Auto"/>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <TextBlock Text="Folders with their own saved view" Style="{StaticResource SectionHeader}" Margin="0,0,0,4"/>
+                    <TextBlock Style="{StaticResource Caption}" Text="FileHub remembers view, sort and columns per folder automatically when you change them (like Windows)." Margin="0,0,0,8"/>
+                    <ListBox x:Name="SavedList" MaxHeight="260" MinHeight="80"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button Content="Reset selected folder to defaults" Click="ResetOne_Click"/>
+                        <Button Content="Reset all folders" Click="ResetAll_Click" Margin="8,0,0,0"/>
+                        <Button Content="Refresh list" Click="RefreshList_Click" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

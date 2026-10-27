@@ -1,0 +1,52 @@
+<Window x:Class="FileHub.UI.Hub.HubWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="File Hub" Width="1280" Height="820" MinWidth="800" MinHeight="500"
+        Background="{DynamicResource WindowBackgroundBrush}" Foreground="{DynamicResource TextBrush}"
+        FontFamily="{StaticResource UIFont}" FontSize="13"
+        WindowStartupLocation="CenterScreen" UseLayoutRounding="True" SnapsToDevicePixels="True">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="200"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- navigation rail -->
+        <Border Background="{DynamicResource PaneBackgroundBrush}" Padding="4,12">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Top">
+                    <StackPanel Orientation="Horizontal" Margin="16,0,0,16">
+                        <TextBlock Text="&#xE773;" Style="{StaticResource Glyph}" FontSize="20" Foreground="{DynamicResource AccentBrush}" Margin="0,0,10,0"/>
+                        <TextBlock Text="File Hub" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <ToggleButton Style="{StaticResource NavRailButton}" Tag="search" Click="Nav_Click"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE721;" Style="{StaticResource Glyph}" Margin="0,0,12,0"/><TextBlock Text="Search"/></StackPanel></ToggleButton>
+                    <ToggleButton Style="{StaticResource NavRailButton}" Tag="index" Click="Nav_Click"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8B7;" Style="{StaticResource Glyph}" Margin="0,0,12,0"/><TextBlock Text="Index &amp; database"/></StackPanel></ToggleButton>
+                    <ToggleButton Style="{StaticResource NavRailButton}" Tag="contextmenu" Click="Nav_Click"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8FD;" Style="{StaticResource Glyph}" Margin="0,0,12,0"/><TextBlock Text="Context menu"/></StackPanel></ToggleButton>
+                    <ToggleButton Style="{StaticResource NavRailButton}" Tag="filetypes" Click="Nav_Click"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8A5;" Style="{StaticResource Glyph}" Margin="0,0,12,0"/><TextBlock Text="File types"/></StackPanel></ToggleButton>
+                    <ToggleButton Style="{StaticResource NavRailButton}" Tag="folders" Click="Nav_Click"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE8B7;" Style="{StaticResource Glyph}" Margin="0,0,12,0"/><TextBlock Text="Folder views"/></StackPanel></ToggleButton>
+                    <ToggleButton Style="{StaticResource NavRailButton}" Tag="startmenu" Click="Nav_Click"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE7E8;" Style="{StaticResource Glyph}" Margin="0,0,12,0"/><TextBlock Text="Start menu"/></StackPanel></ToggleButton>
+                    <ToggleButton Style="{StaticResource NavRailButton}" Tag="general" Click="Nav_Click"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE713;" Style="{StaticResource Glyph}" Margin="0,0,12,0"/><TextBlock Text="Settings"/></StackPanel></ToggleButton>
+                    <ToggleButton Style="{StaticResource NavRailButton}" Tag="help" Click="Nav_Click"><StackPanel Orientation="Horizontal"><TextBlock Text="&#xE897;" Style="{StaticResource Glyph}" Margin="0,0,12,0"/><TextBlock Text="Search syntax"/></StackPanel></ToggleButton>
+                </StackPanel>
+                <StackPanel DockPanel.Dock="Bottom" VerticalAlignment="Bottom" Margin="12,0,12,4">
+                    <Button Content="Open Explorer" Click="OpenExplorer_Click" Margin="0,0,0,8"/>
+                    <ToggleButton x:Name="RealTimeToggle" Style="{StaticResource Chip}" HorizontalAlignment="Stretch" Margin="0,0,0,6" Click="RealTimeToggle_Click"
+                                  ToolTip="Real-time indexing: new, changed and deleted files are added to the index as they happen. Off = the index only changes on a rebuild.">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE895;" Style="{StaticResource Glyph}" FontSize="12" Margin="0,0,8,0"/><TextBlock Text="Real-time indexing"/></StackPanel>
+                    </ToggleButton>
+                    <ToggleButton x:Name="PauseToggle" Style="{StaticResource Chip}" HorizontalAlignment="Stretch" Margin="0,0,0,10" Click="PauseToggle_Click"
+                                  ToolTip="Pause all background indexing (crawl, live changes and file contents). Changes are queued and applied when resumed.">
+                        <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE769;" Style="{StaticResource Glyph}" FontSize="12" Margin="0,0,8,0"/><TextBlock Text="Pause indexing"/></StackPanel>
+                    </ToggleButton>
+                    <TextBlock x:Name="IndexStatus" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="ContentStatus" Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                </StackPanel>
+                <Border/>
+            </DockPanel>
+        </Border>
+
+        <Border Grid.Column="1" Background="{DynamicResource CardBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1,0,0,0">
+            <ContentControl x:Name="Host" Focusable="False"/>
+        </Border>
+    </Grid>
+</Window>
