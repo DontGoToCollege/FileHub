@@ -243,6 +243,7 @@ public partial class App : Application
     {
         try
         {
+            Index?.SaveIfChanged();
             _hook?.Dispose();
             _hotkeys?.Dispose();
             _tray?.Dispose();

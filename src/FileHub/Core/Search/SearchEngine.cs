@@ -86,19 +86,20 @@ public sealed class SearchEngine
 
     public static IComparer<int> MakeComparer(FileIndex index, SortKey key, bool desc)
     {
+        // a file deleted by the live indexer mid-sort has a null name; compare it as "" instead of crashing
         var entries = index.Entries;
         int sign = desc ? -1 : 1;
         Comparison<int> c = key switch
         {
-            SortKey.Name => (a, b) => CompareNames(entries[a].Name!, entries[b].Name!),
+            SortKey.Name => (a, b) => CompareNames(entries[a].Name ?? "", entries[b].Name ?? ""),
             SortKey.Size => (a, b) => entries[a].Size.CompareTo(entries[b].Size),
             SortKey.Modified => (a, b) => entries[a].Modified.CompareTo(entries[b].Modified),
             SortKey.Created => (a, b) => entries[a].Created.CompareTo(entries[b].Created),
-            SortKey.Extension => (a, b) => string.Compare(FileTypes.ExtensionOf(entries[a].Name!), FileTypes.ExtensionOf(entries[b].Name!), StringComparison.OrdinalIgnoreCase),
+            SortKey.Extension => (a, b) => string.Compare(FileTypes.ExtensionOf(entries[a].Name ?? ""), FileTypes.ExtensionOf(entries[b].Name ?? ""), StringComparison.OrdinalIgnoreCase),
             SortKey.Type => (a, b) =>
             {
                 int d = entries[b].IsDirectory.CompareTo(entries[a].IsDirectory);
-                return d != 0 ? d : string.Compare(FileTypes.ExtensionOf(entries[a].Name!), FileTypes.ExtensionOf(entries[b].Name!), StringComparison.OrdinalIgnoreCase);
+                return d != 0 ? d : string.Compare(FileTypes.ExtensionOf(entries[a].Name ?? ""), FileTypes.ExtensionOf(entries[b].Name ?? ""), StringComparison.OrdinalIgnoreCase);
             },
             SortKey.Path => (a, b) => string.Compare(index.PathOf(a), index.PathOf(b), StringComparison.OrdinalIgnoreCase),
             _ => (a, b) => a.CompareTo(b),
@@ -144,7 +145,7 @@ public sealed class SearchEngine
         {
             int id = result.Ids[i];
             ref var e = ref entries[id];
-            string name = e.Name!;
+            if (e.Name is not string name) continue; // deleted since the search ran
             int score = 0;
             string ext = FileTypes.ExtensionOf(name);
             bool isApp = ext.Equals("lnk", StringComparison.OrdinalIgnoreCase) || ext.Equals("exe", StringComparison.OrdinalIgnoreCase) || ext.Equals("url", StringComparison.OrdinalIgnoreCase);

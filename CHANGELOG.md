@@ -2,6 +2,16 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.1
+
+### Bug fixes
+- **File changes are no longer lost when FileHub closes.** The name index is now saved on exit when real-time
+  indexing changed it since the last save (before, up to 10 minutes of new, renamed or deleted files were forgotten,
+  and files made just before closing could not be found until the next scheduled rebuild).
+- **Changes made during a cancelled rebuild are kept.** They are now applied to the current index instead of dropped.
+- **Sorted searches no longer crash when a file is deleted mid-search.** Sorting by name, type or extension and the
+  Start menu ranking now skip files the live indexer removed while the search was running.
+
 ## 0.3.0
 
 ### Bug fixes

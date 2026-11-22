@@ -142,13 +142,18 @@ public sealed class IndexService : IDisposable
             {
                 built = await Task.Run(() => IndexBuilder.Build(roots, _settings.Index.Excludes, progress, ct, _runGate), ct);
             }
-            catch (OperationCanceledException) { SetState(IndexState.Ready, $"{Index.LiveCount:N0} items"); return; }
+            catch (OperationCanceledException)
+            {
+                // the old index stays: apply what changed meanwhile instead of dropping it
+                _building = false;
+                ReplayPending();
+                SetState(IndexState.Ready, $"{Index.LiveCount:N0} items");
+                return;
+            }
 
             Index = built;
             _building = false;
-            List<FsChange> replay;
-            lock (_pendingDuringBuild) { replay = _pendingDuringBuild.ToList(); _pendingDuringBuild.Clear(); }
-            foreach (var c in replay) Apply(c);
+            ReplayPending();
             SetState(IndexState.Ready, $"{built.LiveCount:N0} items");
             IndexChanged?.Invoke();
             Log.Info($"Index built: {built.LiveCount:N0} entries in {sw.Elapsed.TotalSeconds:F1}s");
@@ -158,6 +163,14 @@ public sealed class IndexService : IDisposable
         finally { _building = false; _buildGate.Release(); }
     }
 
+    private void ReplayPending()
+    {
+        List<FsChange> replay;
+        lock (_pendingDuringBuild) { replay = _pendingDuringBuild.ToList(); _pendingDuringBuild.Clear(); }
+        foreach (var c in replay)
+            try { Apply(c); } catch (Exception ex) { Log.Warn("Apply change failed: " + ex.Message); }
+    }
+
     private readonly SemaphoreSlim _saveGate = new(1, 1);
 
     public Task SaveAsync() => Task.Run(() =>
@@ -165,6 +178,7 @@ public sealed class IndexService : IDisposable
         if (!_saveGate.Wait(0)) return; // a save is already running
         try
         {
+            _dirty = false;
             var sw = System.Diagnostics.Stopwatch.StartNew();
             IndexStore.Save(Index, Paths.IndexFile);
             _lastSave = DateTime.UtcNow;
@@ -173,6 +187,14 @@ public sealed class IndexService : IDisposable
         catch (Exception ex) { Log.Error("Index save failed", ex); }
         finally { _saveGate.Release(); }
     });
+
+    private volatile bool _dirty;   // live changes applied since the last snapshot save
+
+    /// <summary>Called on exit: writes the snapshot if live changes would otherwise be lost (never while loading, so an empty index can't overwrite a good one).</summary>
+    public void SaveIfChanged()
+    {
+        if (_dirty && State == IndexState.Ready) SaveAsync().Wait(10_000);
+    }
 
     public void CancelBuild() => _buildCts?.Cancel();
 
@@ -212,6 +234,7 @@ public sealed class IndexService : IDisposable
     private void Apply(FsChange c)
     {
         var index = Index;
+        _dirty = true;
         switch (c.Kind)
         {
             case FsChangeKind.Created:
