@@ -9,7 +9,7 @@ FileHub lives at `%USERPROFILE%\Music\Claude\Projects\FileHub` (solution root; p
 - Data in `%LocalAppData%\FileHub` (settings.json, index.fhdb snapshot, meta.db SQLite with FTS5, logs\).
 - Index of this machine: ~618k entries, full crawl ≈23 s, snapshot load ≈0.3 s.
 - Default hub hotkey Ctrl+Alt+Space fails to register on this machine (taken by another app); user can change it in Settings.
-- Smoke-test technique that works: launch exe, then capture windows with `PrintWindow(hwnd, hdc, 2)` via PowerShell Add-Type (CopyFromScreen gives garbage for the WPF window). Kill with `taskkill /IM FileHub.exe /F` before republishing.
+- Smoke-test technique that works: launch exe, then capture windows with `PrintWindow(hwnd, hdc, 2)` via PowerShell Add-Type (CopyFromScreen gives garbage for the WPF window). Close it with `FileHub.exe --exit` before republishing (graceful: since 0.3.1 it saves the index on exit; plain `taskkill` without /F does nothing to it, /F loses unsaved live changes).
 
 - Versioning now follows the global CLAUDE.md setup (since 2026-10-27): bump `<Version>` in the csproj (+ app.manifest where present) and add a CHANGELOG entry, then `.\publish.ps1`, which refuses an already-archived version and keeps `<Exe>.exe` at the project root plus `Versions\Archive\<Exe>-<version>.exe`; commit, push, and `gh release create v<version> <Exe>.exe`. `archive-version.ps1` is gone (git holds the source history; old snapshot folders sit in `Versions\Archive`).
 - User wants minimal, targeted changes per iteration; preserve existing design/behavior.
