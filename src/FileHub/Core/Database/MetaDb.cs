@@ -29,6 +29,52 @@ public sealed class MetaDb : IDisposable
             CREATE TABLE IF NOT EXISTS folder_views(path TEXT PRIMARY KEY, json TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT);
             """);
+        MigrateFtsToRowids(c);
+    }
+
+    /// <summary>
+    /// Schema 1: each FTS row's rowid equals its content_meta / props rowid, so replacing or removing a file's
+    /// text is a rowid lookup. Before, rows were found by the UNINDEXED path column: a full scan of every
+    /// stored document per file, which made a full content pass take days. Existing rows are carried over.
+    /// </summary>
+    private static void MigrateFtsToRowids(SqliteConnection c)
+    {
+        using (var v = c.CreateCommand()) { v.CommandText = "PRAGMA user_version"; if (Convert.ToInt64(v.ExecuteScalar()) >= 1) return; }
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        using var tx = c.BeginTransaction();
+        using var cmd = c.CreateCommand();
+        cmd.Transaction = tx;
+        // CROSS JOIN keeps the FTS table as the outer loop (one scan); the meta side is a primary-key lookup
+        cmd.CommandText = """
+            CREATE VIRTUAL TABLE content_fts_new USING fts5(path UNINDEXED, body, tokenize='unicode61 remove_diacritics 2');
+            INSERT INTO content_fts_new(rowid, path, body) SELECT m.rowid, f.path, f.body FROM content_fts f CROSS JOIN content_meta m ON m.path = f.path GROUP BY m.rowid;
+            DROP TABLE content_fts;
+            ALTER TABLE content_fts_new RENAME TO content_fts;
+            CREATE VIRTUAL TABLE props_fts_new USING fts5(path UNINDEXED, body, tokenize='unicode61 remove_diacritics 2');
+            INSERT INTO props_fts_new(rowid, path, body) SELECT m.rowid, f.path, f.body FROM props_fts f CROSS JOIN props m ON m.path = f.path GROUP BY m.rowid;
+            DROP TABLE props_fts;
+            ALTER TABLE props_fts_new RENAME TO props_fts;
+            PRAGMA user_version = 1;
+            """;
+        try
+        {
+            cmd.ExecuteNonQuery();
+            tx.Commit();
+            Log.Info($"meta.db migrated to rowid-keyed full-text tables in {sw.ElapsedMilliseconds} ms");
+        }
+        catch (SqliteException ex)
+        {
+            // never block startup: start the content/metadata tables over; the indexer refills them
+            Log.Error("meta.db migration failed; content and metadata will be re-indexed", ex);
+            tx.Rollback();
+            Exec(c, """
+                DROP TABLE IF EXISTS content_fts_new; DROP TABLE IF EXISTS props_fts_new;
+                DELETE FROM content_meta; DELETE FROM props; DROP TABLE content_fts; DROP TABLE props_fts;
+                CREATE VIRTUAL TABLE content_fts USING fts5(path UNINDEXED, body, tokenize='unicode61 remove_diacritics 2');
+                CREATE VIRTUAL TABLE props_fts USING fts5(path UNINDEXED, body, tokenize='unicode61 remove_diacritics 2');
+                PRAGMA user_version = 1;
+                """);
+        }
     }
 
     private SqliteConnection Open()
@@ -85,16 +131,19 @@ public sealed class MetaDb : IDisposable
         {
             using var c = Open();
             using var tx = c.BeginTransaction();
-            using var del = c.CreateCommand(); del.Transaction = tx; del.CommandText = "DELETE FROM content_fts WHERE path=$p"; var dp = del.Parameters.Add("$p", SqliteType.Text);
-            using var ins = c.CreateCommand(); ins.Transaction = tx; ins.CommandText = "INSERT INTO content_fts(path, body) VALUES($p,$b)"; var ip = ins.Parameters.Add("$p", SqliteType.Text); var ib = ins.Parameters.Add("$b", SqliteType.Text);
-            using var meta = c.CreateCommand(); meta.Transaction = tx; meta.CommandText = "INSERT OR REPLACE INTO content_meta(path, modified, size, indexed) VALUES($p,$m,$s,$i)";
+            // upsert (not INSERT OR REPLACE) keeps the row's rowid, which is also its FTS rowid
+            using var meta = c.CreateCommand(); meta.Transaction = tx;
+            meta.CommandText = "INSERT INTO content_meta(path, modified, size, indexed) VALUES($p,$m,$s,$i) ON CONFLICT(path) DO UPDATE SET modified=excluded.modified, size=excluded.size, indexed=excluded.indexed RETURNING rowid";
             var mp = meta.Parameters.Add("$p", SqliteType.Text); var mm = meta.Parameters.Add("$m", SqliteType.Integer); var ms = meta.Parameters.Add("$s", SqliteType.Integer); var mi = meta.Parameters.Add("$i", SqliteType.Integer);
+            using var del = c.CreateCommand(); del.Transaction = tx; del.CommandText = "DELETE FROM content_fts WHERE rowid=$r"; var dr = del.Parameters.Add("$r", SqliteType.Integer);
+            using var ins = c.CreateCommand(); ins.Transaction = tx; ins.CommandText = "INSERT INTO content_fts(rowid, path, body) VALUES($r,$p,$b)"; var ir = ins.Parameters.Add("$r", SqliteType.Integer); var ip = ins.Parameters.Add("$p", SqliteType.Text); var ib = ins.Parameters.Add("$b", SqliteType.Text);
             long now = DateTime.UtcNow.Ticks;
             foreach (var (path, modified, size, body) in rows)
             {
-                dp.Value = path; del.ExecuteNonQuery();
-                if (body.Length > 0) { ip.Value = path; ib.Value = body; ins.ExecuteNonQuery(); }
-                mp.Value = path; mm.Value = modified; ms.Value = size; mi.Value = now; meta.ExecuteNonQuery();
+                mp.Value = path; mm.Value = modified; ms.Value = size; mi.Value = now;
+                long rowid = Convert.ToInt64(meta.ExecuteScalar());
+                dr.Value = rowid; del.ExecuteNonQuery();
+                if (body.Length > 0) { ir.Value = rowid; ip.Value = path; ib.Value = body; ins.ExecuteNonQuery(); }
             }
             tx.Commit();
         }
@@ -106,15 +155,17 @@ public sealed class MetaDb : IDisposable
         {
             using var c = Open();
             using var tx = c.BeginTransaction();
-            using var del = c.CreateCommand(); del.Transaction = tx; del.CommandText = "DELETE FROM props_fts WHERE path=$p"; var dp = del.Parameters.Add("$p", SqliteType.Text);
-            using var ins = c.CreateCommand(); ins.Transaction = tx; ins.CommandText = "INSERT INTO props_fts(path, body) VALUES($p,$b)"; var ip = ins.Parameters.Add("$p", SqliteType.Text); var ib = ins.Parameters.Add("$b", SqliteType.Text);
-            using var meta = c.CreateCommand(); meta.Transaction = tx; meta.CommandText = "INSERT OR REPLACE INTO props(path, modified, json) VALUES($p,$m,$j)";
+            using var meta = c.CreateCommand(); meta.Transaction = tx;
+            meta.CommandText = "INSERT INTO props(path, modified, json) VALUES($p,$m,$j) ON CONFLICT(path) DO UPDATE SET modified=excluded.modified, json=excluded.json RETURNING rowid";
             var mp = meta.Parameters.Add("$p", SqliteType.Text); var mm = meta.Parameters.Add("$m", SqliteType.Integer); var mj = meta.Parameters.Add("$j", SqliteType.Text);
+            using var del = c.CreateCommand(); del.Transaction = tx; del.CommandText = "DELETE FROM props_fts WHERE rowid=$r"; var dr = del.Parameters.Add("$r", SqliteType.Integer);
+            using var ins = c.CreateCommand(); ins.Transaction = tx; ins.CommandText = "INSERT INTO props_fts(rowid, path, body) VALUES($r,$p,$b)"; var ir = ins.Parameters.Add("$r", SqliteType.Integer); var ip = ins.Parameters.Add("$p", SqliteType.Text); var ib = ins.Parameters.Add("$b", SqliteType.Text);
             foreach (var (path, modified, json, text) in rows)
             {
-                dp.Value = path; del.ExecuteNonQuery();
-                if (text.Length > 0) { ip.Value = path; ib.Value = text; ins.ExecuteNonQuery(); }
-                mp.Value = path; mm.Value = modified; mj.Value = json; meta.ExecuteNonQuery();
+                mp.Value = path; mm.Value = modified; mj.Value = json;
+                long rowid = Convert.ToInt64(meta.ExecuteScalar());
+                dr.Value = rowid; del.ExecuteNonQuery();
+                if (text.Length > 0) { ir.Value = rowid; ip.Value = path; ib.Value = text; ins.ExecuteNonQuery(); }
             }
             tx.Commit();
         }
@@ -126,7 +177,10 @@ public sealed class MetaDb : IDisposable
         {
             using var c = Open();
             using var cmd = c.CreateCommand();
-            cmd.CommandText = "DELETE FROM content_fts WHERE path=$p; DELETE FROM content_meta WHERE path=$p; DELETE FROM props_fts WHERE path=$p; DELETE FROM props WHERE path=$p;";
+            cmd.CommandText = """
+                DELETE FROM content_fts WHERE rowid=(SELECT rowid FROM content_meta WHERE path=$p); DELETE FROM content_meta WHERE path=$p;
+                DELETE FROM props_fts WHERE rowid=(SELECT rowid FROM props WHERE path=$p); DELETE FROM props WHERE path=$p;
+                """;
             cmd.Parameters.AddWithValue("$p", path);
             cmd.ExecuteNonQuery();
         }
@@ -152,7 +206,7 @@ public sealed class MetaDb : IDisposable
             using var c = Open();
             using var cmd = c.CreateCommand();
             cmd.CommandText = includeProps
-                ? "SELECT path FROM content_fts WHERE content_fts MATCH $q LIMIT $n UNION SELECT path FROM props_fts WHERE props_fts MATCH $q LIMIT $n"
+                ? "SELECT path FROM (SELECT path FROM content_fts WHERE content_fts MATCH $q LIMIT $n) UNION SELECT path FROM (SELECT path FROM props_fts WHERE props_fts MATCH $q LIMIT $n)"
                 : "SELECT path FROM content_fts WHERE content_fts MATCH $q LIMIT $n";
             cmd.Parameters.AddWithValue("$q", match);
             cmd.Parameters.AddWithValue("$n", limit);

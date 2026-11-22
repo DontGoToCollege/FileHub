@@ -2,6 +2,16 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.0
+
+### Bug fixes
+- **Content and metadata indexing no longer takes days.** Saving each file's text used to scan every document already
+  stored (143 ms per file with only 2,300 documents, and slower as the database grew). Text rows are now found by row ID,
+  so a save takes well under 1 ms no matter how big the database gets. Existing indexed content is carried over
+  automatically on the first start (a one-time pause of a few seconds).
+- **Content search works again.** Every content search failed with a SQL error ("LIMIT clause should come after UNION")
+  and silently returned nothing, in the Hub search and in Start menu content search.
+
 ## 0.2.0
 
 ### Enhancements
