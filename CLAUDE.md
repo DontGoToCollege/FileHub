@@ -15,6 +15,7 @@ FileHub lives at `%USERPROFILE%\Music\Claude\Projects\FileHub` (solution root; p
 - User wants minimal, targeted changes per iteration; preserve existing design/behavior.
 - User runs StartIsBack; Claude desktop owns Ctrl+Alt+Space (FileHub's LL keyboard hook now captures it first).
 - `Slow folder load` lines in the log (>400 ms) identify slow Explorer navigations.
+- Never open the live `meta.db` read-write from a script while FileHub runs (a Bash-tool read on 2026-11-22 likely corrupted it; the Bash view of `%LocalAppData%FileHub` can also be stale). Inspect a copy, or use `?mode=ro&immutable=1`. Since 0.3.0 the FTS rowid equals the `content_meta`/`props` rowid (`PRAGMA user_version` 1).
 
 **Why:** the user wants feedback-driven iteration on this app; knowing the layout and the validation recipe avoids re-deriving it.
 **How to apply:** for follow-up requests, edit under `src\FileHub`, rebuild with `dotnet build`, republish with publish.ps1, smoke-test with PrintWindow captures. See user-testing-preference.
