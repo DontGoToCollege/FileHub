@@ -486,8 +486,12 @@ public sealed class MetaDb : IDisposable
 
     // ------------------------------------------------------------------ folder views / kv
 
+    // views set this session, read back at once: the write itself may wait behind a content-index write for a moment
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string?> _views = new(StringComparer.OrdinalIgnoreCase);
+
     public string? GetFolderView(string path)
     {
+        if (_views.TryGetValue(path, out var json)) return json;
         using var c = Open();
         using var cmd = c.CreateCommand();
         cmd.CommandText = "SELECT json FROM folder_views WHERE path=$p";
@@ -497,8 +501,10 @@ public sealed class MetaDb : IDisposable
 
     public void SetFolderView(string path, string? json)
     {
+        _views[path] = json;
         lock (_writeLock)
         {
+            json = _views[path];   // the newest: two saves waiting here may get the lock in either order
             using var c = Open();
             using var cmd = c.CreateCommand();
             if (json == null) { cmd.CommandText = "DELETE FROM folder_views WHERE path=$p"; }
@@ -521,6 +527,7 @@ public sealed class MetaDb : IDisposable
 
     public void ClearFolderViews()
     {
+        _views.Clear();
         lock (_writeLock) { using var c = Open(); Exec(c, "DELETE FROM folder_views"); }
     }
 

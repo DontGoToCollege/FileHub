@@ -289,7 +289,8 @@ public sealed class IndexService : IDisposable
                 int id = c.OldPath != null ? index.FindByPath(c.OldPath) : -1;
                 // the watcher reports the watched root as the old path when it lost the old name; treat it as a new item,
                 // never as "the drive moved" (removing the root would empty the whole index)
-                if (id >= 0 && index[id].Parent < 0) { Log.Warn($"Rename event with drive root as old path ({c.OldPath} -> {c.Path}); treated as new"); id = -1; }
+                bool rootOld = id >= 0 && index[id].Parent < 0;
+                if (rootOld) { Log.Warn($"Rename event with drive root as old path ({c.OldPath} -> {c.Path}); treated as new"); id = -1; }
                 string newName = Path.GetFileName(c.Path);
                 if (id >= 0)
                 {
@@ -313,7 +314,8 @@ public sealed class IndexService : IDisposable
                 }
                 else AddPath(index, c.Path);
                 // drop the old path's content rows (and a folder's children); skip case-only renames, which would re-add the old casing
-                if (c.OldPath != null && !string.Equals(c.OldPath, c.Path, StringComparison.OrdinalIgnoreCase))
+                // never the bogus drive-root old path: the content pass would expand it into every file on the drive (0.3.34)
+                if (c.OldPath != null && !rootOld && !string.Equals(c.OldPath, c.Path, StringComparison.OrdinalIgnoreCase))
                     FileChanged?.Invoke(c.OldPath, false);
                 break;
             }

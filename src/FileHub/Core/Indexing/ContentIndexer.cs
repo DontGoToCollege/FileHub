@@ -278,9 +278,18 @@ public sealed class ContentIndexer : IDisposable
                 }
             }
             catch (Exception ex) { Log.Warn("Re-index failed for " + path + ": " + ex.Message); }
+            // a moved or renamed big folder is written 500 files at a time: never all its text in memory, and the
+            // write lock (which saving a folder view or closing a window waits on) is only ever held briefly
+            if (contentBatch.Count + propsBatch.Count >= 500) Flush();
         }
-        if (contentBatch.Count > 0) _db.UpsertContentBatch(contentBatch);
-        if (propsBatch.Count > 0) _db.UpsertPropsBatch(propsBatch);
+        Flush();
+
+        void Flush()
+        {
+            if (contentBatch.Count > 0) _db.UpsertContentBatch(contentBatch);
+            if (propsBatch.Count > 0) _db.UpsertPropsBatch(propsBatch);
+            contentBatch.Clear(); propsBatch.Clear();
+        }
     }
 
     /// <summary>Replaces each existing folder with the indexable files inside it; files and gone paths pass through.</summary>

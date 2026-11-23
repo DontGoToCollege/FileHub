@@ -2,6 +2,21 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.34
+
+### Fixed
+- **Exit from the tray could leave FileHub running.** A program renaming a file in some ways (Brave does it) made Windows
+  report the drive itself (C:\) as the old name. FileHub then re-read every document on that drive in one go: gigabytes of
+  memory, a full CPU core for half an hour, and the database held the whole time, so closing windows on Exit waited for it.
+  That drive-wide re-read no longer happens.
+- **A big folder moved or renamed is re-indexed 500 files at a time**, so its text is never all in memory and the database
+  is only ever held briefly.
+- **Exit always ends the program.** If something still holds it up, FileHub stops anyway after 15 seconds. Nothing saved
+  is lost: an unfinished database write is simply rolled back.
+- **Folder views stick when you go back and forth.** Switching a folder to Large icons, opening another folder and coming
+  back showed Details again: the view was saved in the background and the save could wait behind the drive-wide re-read
+  above. A view now applies the moment it's set, and the newest one is what gets saved.
+
 ## 0.3.33
 
 ### Changed

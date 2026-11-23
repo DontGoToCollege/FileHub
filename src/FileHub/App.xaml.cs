@@ -336,6 +336,9 @@ public partial class App : Application
         var app = Instance;
         if (app._exiting) return;
         app._exiting = true;
+        // Exit always ends the process: if something holds it up (a long database write), stop anyway after 15 s.
+        // Safe: meta.db and thumbs.db use a write-ahead log, so an unfinished write is simply rolled back
+        new Thread(() => { Thread.Sleep(15000); Log.Warn("Exit took over 15 s; ending the process"); System.Diagnostics.Process.GetCurrentProcess().Kill(); }) { IsBackground = true }.Start();
         try { Settings.Save(); } catch { }
         try { app._start?.Close(); } catch { }
         foreach (var w in app._explorers.ToList()) { try { w.Close(); } catch { } }
