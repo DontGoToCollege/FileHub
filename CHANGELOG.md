@@ -2,6 +2,18 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.17
+
+### Smaller, and it stays that way
+- **meta.db looks after itself.** It had grown to 7.8 GB, of which 5.5 GB was empty space left behind by the 0.3.16
+  content-index upgrade and never given back. The first time 0.3.17 runs, it compacts the file once in the background
+  (seconds; searches keep working), then switches it to give free space back on its own. After that, every 30 minutes
+  (after each content pass) FileHub returns unused space to the disk in small steps and merges the content index into
+  one piece when it has split into more than 10. Nothing to click, on every PC.
+- Content searches get a little faster from the tidier index (ranked "meeting": 18 → 11 ms).
+- Clear thumbnails no longer runs a whole-database VACUUM in memory (on a multi-GB file that needed GBs of RAM).
+- Saving a thumbnail to the cache never waits more than 0.3 s on other database work; it skips the cache instead.
+
 ## 0.3.16
 
 ### Faster

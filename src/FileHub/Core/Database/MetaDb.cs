@@ -12,14 +12,17 @@ namespace FileHub.Core.Database;
 public sealed class MetaDb : IDisposable
 {
     private readonly string _connString;
+    private readonly string _file;
     private readonly object _writeLock = new();
 
     public MetaDb(string file)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+        _file = file;
         _connString = new SqliteConnectionStringBuilder { DataSource = file, Cache = SqliteCacheMode.Private, Pooling = true /* private cache + WAL: readers never wait on the content indexer's writes */ }.ToString();
         using var c = Open();
-        Exec(c, "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY;");
+        // auto_vacuum only takes on a new file; older ones are switched by Maintain's one-time VACUUM
+        Exec(c, "PRAGMA auto_vacuum=INCREMENTAL; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY;");
         bool fresh = Scalar(c, "SELECT count(*) FROM sqlite_master WHERE name='content_fts'") == 0;
         Exec(c, $"""
             CREATE TABLE IF NOT EXISTS content_meta(path TEXT PRIMARY KEY, modified INTEGER NOT NULL, size INTEGER NOT NULL, indexed INTEGER NOT NULL);
@@ -86,6 +89,45 @@ public sealed class MetaDb : IDisposable
                 tx.Commit();
             }
         }
+    }
+
+    /// <summary>
+    /// Keeps meta.db small and its search index tidy, with no action from the user: the content indexer runs it after
+    /// each pass (every 30 min). A database from before 0.3.17 is switched once to incremental auto-vacuum (one VACUUM,
+    /// seconds here; searches keep reading meanwhile). Each run then merges the FTS segments into one when more than
+    /// 10 have built up (fewer segments = faster searches) and hands free pages back to the disk, every step a short
+    /// write so thumbnails and folder views never wait long.
+    /// </summary>
+    public void Maintain(CancellationToken ct)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        long sizeBefore = new FileInfo(_file).Length;
+        using var c = Open();
+        if (Scalar(c, "PRAGMA auto_vacuum") != 2)
+        {
+            Log.Info($"Compacting meta.db ({sizeBefore / 1e9:F2} GB, one time)");
+            // temp_store=FILE: VACUUM builds its copy in the temp store, which must not be RAM for a multi-GB file
+            lock (_writeLock) Exec(c, "PRAGMA auto_vacuum=INCREMENTAL; PRAGMA temp_store=FILE; VACUUM; PRAGMA temp_store=MEMORY;");
+        }
+        foreach (var t in new[] { "content_fts", "props_fts" })
+        {
+            if (Scalar(c, $"SELECT count(DISTINCT segid) FROM {t}_idx") <= 10) continue;
+            // a negative merge step works towards a single segment (like 'optimize') but only ~2,000 pages at a time
+            for (long changed = 2; changed >= 2 && !ct.IsCancellationRequested;)
+                lock (_writeLock)
+                {
+                    long before = Scalar(c, "SELECT total_changes()");
+                    Exec(c, $"INSERT INTO {t}({t}, rank) VALUES('merge', -2000)");
+                    changed = Scalar(c, "SELECT total_changes()") - before;
+                }
+        }
+        // keep up to 16 MB of free pages for upcoming writes; give the rest back 8 MB per step
+        while (!ct.IsCancellationRequested && Scalar(c, "PRAGMA freelist_count") > 4096)
+            lock (_writeLock) Exec(c, "PRAGMA incremental_vacuum(2048)");
+        lock (_writeLock) Exec(c, "PRAGMA wal_checkpoint(TRUNCATE)");   // a VACUUM or big merge leaves a WAL as large as what it wrote
+        long sizeAfter = new FileInfo(_file).Length;
+        if (sizeBefore - sizeAfter > 16 << 20 || sw.ElapsedMilliseconds > 2000)
+            Log.Info($"meta.db upkeep: {sizeBefore / 1e9:F2} → {sizeAfter / 1e9:F2} GB in {sw.Elapsed.TotalSeconds:F1} s");
     }
 
     /// <summary>
@@ -398,7 +440,9 @@ public sealed class MetaDb : IDisposable
 
     public void PutThumb(string key, long modified, byte[] png)
     {
-        lock (_writeLock)
+        // only a cache: when another write (a one-time VACUUM) holds the database, skip it rather than stall thumbnails
+        if (!Monitor.TryEnter(_writeLock, 300)) return;
+        try
         {
             using var c = Open();
             using var cmd = c.CreateCommand();
@@ -409,6 +453,7 @@ public sealed class MetaDb : IDisposable
             cmd.Parameters.AddWithValue("$a", DateTime.UtcNow.Ticks);
             cmd.ExecuteNonQuery();
         }
+        finally { Monitor.Exit(_writeLock); }
     }
 
     public long ThumbCount()
@@ -421,7 +466,7 @@ public sealed class MetaDb : IDisposable
 
     public void ClearThumbs()
     {
-        lock (_writeLock) { using var c = Open(); Exec(c, "DELETE FROM thumbs; VACUUM;"); }
+        lock (_writeLock) { using var c = Open(); Exec(c, "DELETE FROM thumbs"); }   // Maintain gives the space back
     }
 
     // ------------------------------------------------------------------ folder views / kv

@@ -90,6 +90,7 @@ public sealed class ContentIndexer : IDisposable
                     _fullPassRequested = false;
                     FullPass(ct);
                     lastPass = DateTime.UtcNow;
+                    try { _db.Maintain(ct); } catch (Exception ex) { Log.Warn("meta.db upkeep failed: " + ex.Message); }
                     continue;
                 }
                 Thread.Sleep(1000);
