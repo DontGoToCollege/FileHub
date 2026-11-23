@@ -12,6 +12,8 @@ public sealed class SearchResult
     public int TotalMatches { get; init; }
     public TimeSpan Elapsed { get; init; }
     public string? Error { get; init; }
+    /// <summary>The query searched file contents and the ids are in best-match order (your documents first).</summary>
+    public bool Ranked { get; init; }
     public bool Truncated => Ids.Length < TotalMatches;
 }
 
@@ -122,7 +124,8 @@ public sealed class SearchEngine
         }
 
         var ids = all.Length > options.MaxResults ? all[..options.MaxResults] : all;
-        return new SearchResult { Index = index, Ids = ids, TotalMatches = total, Elapsed = sw.Elapsed, Error = parsed.Error };
+        return new SearchResult { Index = index, Ids = ids, TotalMatches = total, Elapsed = sw.Elapsed, Error = parsed.Error,
+            Ranked = options.Sort == SortKey.None && parsed.ContentRank is { Count: > 0 } };
     }
 
     public static IComparer<int> MakeComparer(FileIndex index, SortKey key, bool desc)

@@ -2,6 +2,14 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.14
+
+### Bug fixes
+- **Content searches in an Explorer folder keep the best-match order.** In a real folder (not Home or This PC) the
+  results were re-sorted by the folder's sort (usually Name), so your own documents ended up wherever their name
+  fell among hundreds of matches. They now stay best match first, like Explorer's search results by relevance;
+  picking a sort while searching still re-sorts them.
+
 ## 0.3.13
 
 ### Changed

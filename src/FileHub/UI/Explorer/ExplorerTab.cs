@@ -432,11 +432,9 @@ public sealed class ExplorerTab : ObservableObject
             if (cts.IsCancellationRequested) return;
             var items = new List<FileItem>(result.Ids.Length);
             foreach (var id in result.Ids) items.Add(FileItem.FromEntry(result.Index, id));
-            if (!IsVirtual)
-            {
-                // live fallback: the index may not include very recent files in this folder
-                SortItems(items);
-            }
+            // content searches keep the best-match order (like Explorer's search results by relevance);
+            // picking a sort while searching still re-sorts them
+            if (!IsVirtual && !result.Ranked) SortItems(items);
             Items = items;
             Status = result.Truncated
                 ? $"{result.TotalMatches:N0} results (showing {result.Ids.Length:N0}) · {result.Elapsed.TotalMilliseconds:F0} ms"
