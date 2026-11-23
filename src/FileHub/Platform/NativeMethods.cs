@@ -324,4 +324,32 @@ internal static class Native
         int v = DWMWCP_ROUND;
         try { DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref v, sizeof(int)); } catch { }
     }
+
+    // ---------------------------------------------------------------- drives
+
+    [StructLayout(LayoutKind.Sequential)] private struct STORAGE_PROPERTY_QUERY { public int PropertyId; public int QueryType; public byte AdditionalParameters; }
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFileW(string name, uint access, uint share, IntPtr sa, uint disposition, uint flags, IntPtr template);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool DeviceIoControl(Microsoft.Win32.SafeHandles.SafeFileHandle h, uint code, ref STORAGE_PROPERTY_QUERY input, int inSize, byte[] output, int outSize, out int returned, IntPtr overlapped);
+
+    /// <summary>
+    /// How drive <paramref name="letter"/> is attached (BusType: 17 NVMe, 11 SATA, 7 USB, 12 SD…) and whether it has a
+    /// seek penalty (a spinning disk); null where Windows can't say. Needs no admin rights.
+    /// </summary>
+    public static (int? bus, bool? seeks) DriveKind(char letter)
+    {
+        using var h = CreateFileW(@"\\.\" + letter + ":", 0, 3 /* share read + write */, IntPtr.Zero, 3 /* OPEN_EXISTING */, 0, IntPtr.Zero);
+        if (h.IsInvalid) return (null, null);
+        var buf = new byte[1024];
+        int? bus = QueryStorage(h, 0 /* StorageDeviceProperty */, buf) >= 32 ? BitConverter.ToInt32(buf, 28) : null;   // STORAGE_DEVICE_DESCRIPTOR.BusType
+        bool? seeks = QueryStorage(h, 7 /* StorageDeviceSeekPenaltyProperty */, buf) >= 9 ? buf[8] != 0 : null;      // .IncursSeekPenalty
+        return (bus, seeks);
+    }
+
+    private static int QueryStorage(Microsoft.Win32.SafeHandles.SafeFileHandle h, int property, byte[] buf)
+    {
+        var q = new STORAGE_PROPERTY_QUERY { PropertyId = property };
+        return DeviceIoControl(h, 0x2D1400 /* IOCTL_STORAGE_QUERY_PROPERTY */, ref q, Marshal.SizeOf<STORAGE_PROPERTY_QUERY>(), buf, buf.Length, out int n, IntPtr.Zero) ? n : 0;
+    }
 }

@@ -113,6 +113,31 @@ public sealed class ContentIndexer : IDisposable
         return true;
     }
 
+    private static readonly Dictionary<char, (int rank, bool oneAtATime)> _drives = new();
+
+    /// <summary>
+    /// A file's drive: its place in the content pass (0 NVMe, 1 other SSD, 2 removable, 3 hard drive or unknown) and
+    /// whether to read its files one at a time (a spinning disk, or one Windows can't describe: a network path…).
+    /// </summary>
+    private static (int rank, bool oneAtATime) DriveOf(string path)
+    {
+        if (path.Length < 2 || path[1] != ':') return (3, true);
+        char d = char.ToUpperInvariant(path[0]);
+        lock (_drives)
+        {
+            if (_drives.TryGetValue(d, out var kind)) return kind;
+            (int? bus, bool? seeks) k = (null, null);
+            bool removable = false;
+            try { k = Native.DriveKind(d); removable = new DriveInfo(d.ToString()).DriveType == DriveType.Removable; } catch { }
+            removable |= k.bus is 7 or 12 or 13;   // USB, SD, MMC
+            int rank = removable ? 2 : k.bus == 17 ? 0 : k.seeks == false ? 1 : 3;
+            _drives[d] = kind = (rank, k.seeks != false);
+            Log.Info($"Drive {d}: {(rank switch { 0 => "NVMe", 1 => "SSD", 2 => "removable", _ => k.seeks == true ? "hard drive" : "type unknown" })}" +
+                     $" (bus {k.bus?.ToString() ?? "?"}); content indexed {(rank + 1) switch { 1 => "1st", 2 => "2nd", 3 => "3rd", _ => "4th" }}, read {(kind.oneAtATime ? "one file at a time" : "in parallel")}");
+            return kind;
+        }
+    }
+
     private void FullPass(CancellationToken ct)
     {
         IsRunning = true;
@@ -124,9 +149,8 @@ public sealed class ContentIndexer : IDisposable
         var haveContent = _settings.Index.ContentIndexing ? _db.LoadContentIndexedPaths() : new HashSet<string>();
         var haveProps = _settings.Index.MetadataIndexing ? _db.LoadPropsIndexedPaths() : new HashSet<string>();
 
-        // only what still needs reading; your own folders first (Desktop, Documents…), then elsewhere, then Windows,
-        // programs and code libraries, so a first run or a repair makes your files searchable within minutes
-        var todo = new List<(int id, string path, string ext, long modified, long size, bool content, bool meta, int tier)>();
+        // only what still needs reading
+        var todo = new List<(int id, string path, string ext, long modified, long size, bool content, bool meta, int drive)>();
         var entries = index.Entries; int count = index.Count;
         for (int i = 0; i < count; i++)
         {
@@ -142,27 +166,37 @@ public sealed class ContentIndexer : IDisposable
             string stamp = path + "|" + e.Modified;
             wantContent &= !haveContent.Contains(stamp);
             wantMeta &= !haveProps.Contains(stamp);
-            if (wantContent || wantMeta) todo.Add((i, path, ext, e.Modified, e.Size, wantContent, wantMeta, SearchEngine.PlaceTier(path)));
+            // drive order: NVMe, then other SSDs, removable drives, hard drives; same kind by letter
+            int drive = DriveOf(path).rank * 32 + (path.Length > 1 && path[1] == ':' ? char.ToUpperInvariant(path[0]) - 'A' : 31);
+            if (wantContent || wantMeta) todo.Add((i, path, ext, e.Modified, e.Size, wantContent, wantMeta, drive));
         }
-        // within a place, small files first (storing costs about what the text weighs, so most files are searchable soonest),
-        // in three size groups rather than strictly by size: crawl order inside a group keeps a hard drive reading neighbours
-        // (a photo read only for its details costs the same at any size, so it counts as small)
+        // on each drive: small files first, then under 1 MB, the largest last (storing costs about what the text weighs, so
+        // most files are searchable soonest), each group A to Z by path (folder by folder, so a hard drive reads neighbours).
+        // A photo read only for its details costs the same at any size, so it counts as small.
         static int SizeGroup(long size, bool content) => !content || size < 64 * 1024 ? 0 : size < 1024 * 1024 ? 1 : 2;
-        todo.Sort((a, b) => a.tier != b.tier ? a.tier.CompareTo(b.tier)
+        todo.Sort((a, b) => a.drive != b.drive ? a.drive.CompareTo(b.drive)
             : SizeGroup(a.size, a.content) != SizeGroup(b.size, b.content) ? SizeGroup(a.size, a.content).CompareTo(SizeGroup(b.size, b.content))
-            : a.id.CompareTo(b.id));
+            : string.Compare(a.path, b.path, StringComparison.OrdinalIgnoreCase));
         Candidates = todo.Count; Processed = 0;
         Status($"Indexing content 0 / {Candidates:N0}");
 
-        // files are read on several threads while the previous chunk is written (the write is the slow part: ~500 files/s);
-        // one file at a time, every slow read held up the whole pass
+        // the next chunk is read while the previous one is written (the write is the slow part on an SSD: ~500 files/s).
+        // SSD files are read on several threads; a hard drive's files one at a time in folder order, one reader per drive:
+        // parallel readers sent its head between folders and halved its speed (0.3.25)
         const int chunk = 500;
         int readers = Math.Clamp(Environment.ProcessorCount / 2, 2, 8);
         Task<(List<(string, long, long, string)> content, List<(string, long, string, string)> props)> Read(int from) => Task.Run(() =>
         {
             var content = new System.Collections.Concurrent.ConcurrentBag<(string, long, long, string)>();
             var props = new System.Collections.Concurrent.ConcurrentBag<(string, long, string, string)>();
-            Parallel.For(from, Math.Min(todo.Count, from + chunk), new ParallelOptions { MaxDegreeOfParallelism = readers, CancellationToken = ct }, k =>
+            var range = Enumerable.Range(from, Math.Min(todo.Count, from + chunk) - from).ToList();
+            var spinning = range.Where(k => DriveOf(todo[k].path).oneAtATime).GroupBy(k => char.ToUpperInvariant(todo[k].path[0]))
+                .Select(g => Task.Run(() => { foreach (int k in g) { ct.ThrowIfCancellationRequested(); ReadOne(k); } }, ct)).ToArray();
+            Parallel.ForEach(range.Where(k => !DriveOf(todo[k].path).oneAtATime), new ParallelOptions { MaxDegreeOfParallelism = readers, CancellationToken = ct }, ReadOne);
+            Task.WaitAll(spinning, ct);
+            return (content.ToList(), props.ToList());
+
+            void ReadOne(int k)
             {
                 var t = todo[k];
                 try
@@ -177,8 +211,7 @@ public sealed class ContentIndexer : IDisposable
                     }
                 }
                 catch (Exception ex) { Log.Warn("Index read failed for " + t.path + ": " + ex.Message); }
-            });
-            return (content.ToList(), props.ToList());
+            }
         }, ct);
 
         var next = todo.Count > 0 ? Read(0) : null;

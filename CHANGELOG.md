@@ -2,6 +2,20 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.27
+
+### Faster
+- **Content indexing goes drive by drive, fastest drives first, and no longer slows down hard drives.** FileHub now
+  asks Windows what each drive is: NVMe drives are indexed first, then other SSDs, then removable drives, then hard
+  drives (drives of the same kind in letter order). On each drive, small files go first and the largest last, each
+  group A to Z by folder.
+- **Hard drives are read one file at a time again**, in folder order, while SSDs and NVMe drives are read on several
+  threads. 0.3.25 read every drive with several threads at once, which sent a hard drive's head jumping between
+  folders and made it slower than before. A drive Windows can't describe is treated as a hard drive. The log notes
+  what each drive was taken for ("Drive D: hard drive …").
+- On this PC's NVMe a fresh content index now fills at about 2,000 files a second while it works through the small
+  files (it was about 500).
+
 ## 0.3.26
 
 ### Faster
