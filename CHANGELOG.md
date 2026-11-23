@@ -2,6 +2,16 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.6
+
+### Bug fixes
+- **Drop-down boxes are readable in dark mode.** They kept Windows' light look with light text (and the open list was
+  white), so settings like Position, Style, Tile size and Search box were nearly invisible. They now follow the
+  theme: dark box, readable text, themed list with hover and selection highlight, and an arrow like the rest of the app.
+
+### Other
+- `--page <name>` opens the Hub on a page (e.g. `--page startmenu`).
+
 ## 0.3.5
 
 ### Bug fixes

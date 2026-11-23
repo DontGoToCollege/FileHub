@@ -97,6 +97,7 @@ public partial class App : Application
                 case "--tray": case "--background": any = true; break;
                 case "--hub": ShowHub(i + 1 < args.Length && !args[i + 1].StartsWith("--") ? args[++i] : null); any = true; break;
                 case "--start": ToggleStartMenu(); any = true; break;
+                case "--page" when i + 1 < args.Length: ShowHub(null, args[++i]); any = true; break;   // e.g. --page startmenu
                 case "--show": ShowExplorer(); any = true; break;
                 case "--rebuild": _ = Index.RebuildAsync(); any = true; break;
                 case "--exit": ExitApp(); return;
