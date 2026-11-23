@@ -2,6 +2,13 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.5
+
+### Bug fixes
+- **Clicking a folder inside a multi-selection now selects just that folder.** It used to keep the whole selection
+  when the clicked item was the first selected one (usually a folder, since folders sort first), while clicking a file
+  worked. The same fix applies to clicking a row's blank area, type-ahead, drag start and right-click.
+
 ## 0.3.4
 
 ### Other

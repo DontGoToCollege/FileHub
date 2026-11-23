@@ -104,6 +104,17 @@ public partial class FileListControl : UserControl
     public FileItem? SelectedItem => List.SelectedItem as FileItem;
     public int Count => List.Items.Count;
 
+    /// <summary>
+    /// Makes <paramref name="item"/> the only selected item. Setting SelectedItem alone does nothing when the item is
+    /// already the first selected one (usually a folder, since they sort first), which left the rest selected.
+    /// </summary>
+    private void SelectOnly(FileItem item)
+    {
+        if (List.SelectedItems.Count == 1 && ReferenceEquals(List.SelectedItem, item)) return;
+        List.UnselectAll();
+        List.SelectedItem = item;
+    }
+
     public void SelectAll() => List.SelectAll();
     public void ClearSelection() => List.UnselectAll();
     public void FocusList()
@@ -115,7 +126,7 @@ public partial class FileListControl : UserControl
 
     public void SelectItem(FileItem item, bool scroll = true)
     {
-        List.SelectedItem = item;
+        SelectOnly(item);
         if (scroll) List.ScrollIntoView(item);
     }
 
@@ -306,14 +317,14 @@ public partial class FileListControl : UserControl
         {
             var rowItem = _marqueeMoved ? null : _marqueeRowItem;
             EndMarquee();
-            if (rowItem != null) { List.SelectedItem = rowItem; FocusItem(rowItem); }   // plain click on a row's blank area
+            if (rowItem != null) { SelectOnly(rowItem); FocusItem(rowItem); }   // plain click on a row's blank area
             e.Handled = true;
             return;
         }
         if (_deferredSelect && _pressedItem != null)
         {
             var item = ItemAt(e.GetPosition(List));
-            if (item == _pressedItem) { List.SelectedItem = _pressedItem; }
+            if (item == _pressedItem) { SelectOnly(_pressedItem); }
         }
         _deferredSelect = false;
         _pressedItem = null;
@@ -449,7 +460,7 @@ public partial class FileListControl : UserControl
         if (e.LeftButton != MouseButtonState.Pressed || _pressedItem == null) return;
         var pos = e.GetPosition(List);
         if (Math.Abs(pos.X - _dragStart.X) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(pos.Y - _dragStart.Y) < SystemParameters.MinimumVerticalDragDistance) return;
-        if (!List.SelectedItems.Contains(_pressedItem)) List.SelectedItem = _pressedItem;
+        if (!List.SelectedItems.Contains(_pressedItem)) SelectOnly(_pressedItem);
         var paths = SelectedItems.Where(i => !i.IsVirtual).Select(i => i.FullPath).ToArray();
         _pressedItem = null; _deferredSelect = false;
         if (paths.Length == 0) return;
@@ -467,7 +478,7 @@ public partial class FileListControl : UserControl
     private void List_MouseRightButtonUp(object sender, MouseButtonEventArgs e)
     {
         var item = ItemAt(e.GetPosition(List));
-        if (item != null && !List.SelectedItems.Contains(item)) List.SelectedItem = item;
+        if (item != null && !List.SelectedItems.Contains(item)) SelectOnly(item);
         if (item == null) List.UnselectAll();
         ContextMenuRequested?.Invoke(SelectedItems, item == null);
         e.Handled = true;
@@ -522,7 +533,7 @@ public partial class FileListControl : UserControl
             int i = (start + n) % _items.Count;
             if (_items[i].DisplayName.StartsWith(prefix, StringComparison.CurrentCultureIgnoreCase))
             {
-                List.SelectedItem = _items[i]; List.ScrollIntoView(_items[i]); FocusItem(_items[i]);
+                SelectOnly(_items[i]); List.ScrollIntoView(_items[i]); FocusItem(_items[i]);
                 break;
             }
         }
