@@ -2,6 +2,14 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.38
+
+### Added
+- **Drives table on Hub → Index & database.** One row per indexed drive: letter, name, kind (NVMe, SSD, removable, hard
+  drive), and how far each pass has got there: names, contents & metadata, and thumbnails, as a percentage with the file
+  counts ("37% (12,345 / 33,000)"). The drive a pass is on says "working", "waiting for contents" or "paused". A
+  percentage never shows 100% while files are left; "—" means that pass hasn't run since FileHub started.
+
 ## 0.3.37
 
 ### Changed

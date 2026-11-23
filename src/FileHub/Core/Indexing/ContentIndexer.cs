@@ -34,6 +34,33 @@ public sealed class ContentIndexer : IDisposable
     public long Candidates { get; private set; }
     public bool IsRunning { get; private set; }
     public event Action? StatusChanged;
+    private (char drive, int total, int start, int end)[] _driveRanges = [];
+
+    /// <summary>Per drive, from the latest pass: files to read (done or not) and files still left. Empty before the first pass.</summary>
+    public IReadOnlyList<(char drive, int total, int left)> DriveProgress() => Progress(_driveRanges, Processed);
+
+    /// <summary>A drive's letter, or '\' for a network path.</summary>
+    internal static char DriveLetter(string path) => path.Length > 1 && path[1] == ':' ? char.ToUpperInvariant(path[0]) : '\\';
+
+    /// <summary>"NVMe", "SSD", "removable" or "hard drive" (also a network path or a drive Windows can't describe).</summary>
+    internal static string KindName(string path) => DriveOf(path).rank switch { 0 => "NVMe", 1 => "SSD", 2 => "removable", _ => "hard drive" };
+
+    /// <summary>Per drive: files wanted, and the first and last place of its files in a pass's drive-sorted to-do list (-1: none left).</summary>
+    internal static (char drive, int total, int start, int end)[] DriveRanges(Dictionary<char, int> totals, int count, Func<int, string> pathAt)
+    {
+        var r = totals.ToDictionary(kv => kv.Key, kv => (total: kv.Value, start: -1, end: -1));
+        for (int k = 0; k < count; k++)
+        {
+            char d = DriveLetter(pathAt(k));
+            if (r.TryGetValue(d, out var x)) r[d] = (x.total, x.start < 0 ? k : x.start, k);
+        }
+        // in the pass's order (drives with nothing left last), so the first one with files left is the one being worked on
+        return r.OrderBy(kv => kv.Value.start < 0 ? int.MaxValue : kv.Value.start).Select(kv => (kv.Key, kv.Value.total, kv.Value.start, kv.Value.end)).ToArray();
+    }
+
+    /// <summary>Files left per drive once a pass has finished the first <paramref name="processed"/> places of its list.</summary>
+    internal static IReadOnlyList<(char drive, int total, int left)> Progress((char drive, int total, int start, int end)[] ranges, long processed) =>
+        ranges.Select(r => (r.drive, r.total, r.start < 0 ? 0 : (int)Math.Max(0, r.end + 1 - Math.Max(processed, r.start)))).ToList();
 
     public ContentIndexer(IndexService index, MetaDb db, AppSettings settings)
     {
@@ -152,6 +179,7 @@ public sealed class ContentIndexer : IDisposable
 
         // only what still needs reading
         var todo = new List<(int id, string path, string ext, long modified, long size, bool content, bool meta, int drive)>();
+        var totals = new Dictionary<char, int>();   // per drive: files to read, done or not
         var entries = index.Entries; int count = index.Count;
         for (int i = 0; i < count; i++)
         {
@@ -165,6 +193,8 @@ public sealed class ContentIndexer : IDisposable
             string path;
             try { path = index.PathOf(i); } catch { continue; }
             string stamp = path + "|" + e.Modified;
+            char letter = DriveLetter(path);
+            totals[letter] = totals.GetValueOrDefault(letter) + 1;
             wantContent &= !haveContent.Contains(stamp);
             wantMeta &= !haveProps.Contains(stamp);
             // drive order: NVMe, then other SSDs, removable drives, hard drives; same kind by letter
@@ -178,7 +208,9 @@ public sealed class ContentIndexer : IDisposable
         todo.Sort((a, b) => a.drive != b.drive ? a.drive.CompareTo(b.drive)
             : SizeGroup(a.size, a.content) != SizeGroup(b.size, b.content) ? SizeGroup(a.size, a.content).CompareTo(SizeGroup(b.size, b.content))
             : string.Compare(a.path, b.path, StringComparison.OrdinalIgnoreCase));
-        Candidates = todo.Count; Processed = 0;
+        Processed = 0;
+        _driveRanges = DriveRanges(totals, todo.Count, k => todo[k].path);
+        Candidates = todo.Count;
         Status($"Indexing content 0 / {Candidates:N0}");
 
         // the next chunk is read while the previous one is written (the write is the slow part on an SSD: ~500 files/s).

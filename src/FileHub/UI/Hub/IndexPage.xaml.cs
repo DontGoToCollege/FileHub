@@ -42,6 +42,7 @@ public partial class IndexPage : UserControl, ISavablePage, IRefreshablePage
         ContentStatusText.Text = IndexingStatus.PassLines;
         Task.Run(() =>
         {
+            try { var rows = DriveRows(); Dispatcher.BeginInvoke(() => DrivesGrid.ItemsSource = rows); } catch { }
             try
             {
                 var st = App.Db.Stats(); long thumbs = App.Thumbs.Count(); string thumbSize = Core.Search.SizeRange.Format(App.Thumbs.FileSize);
@@ -50,6 +51,45 @@ public partial class IndexPage : UserControl, ISavablePage, IRefreshablePage
             }
             catch { }
         });
+    }
+
+    public sealed record DriveRow(string Drive, string Name, string Kind, string Names, string Contents, string Thumbnails);
+
+    // volume labels are read once per page (a sleeping hard drive can take seconds to answer), off the UI thread
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<char, string> _labels = new();
+
+    /// <summary>One row per indexed drive: its name, kind, and how far each pass has got on it.</summary>
+    private List<DriveRow> DriveRows()
+    {
+        var content = App.Content.DriveProgress(); var thumbs = App.ThumbPass.DriveProgress();
+        var letters = App.Index.GetRoots().Where(r => r.Length >= 2 && r[1] == ':').Select(r => char.ToUpperInvariant(r[0]))
+            .Concat(content.Select(p => p.drive)).Concat(thumbs.Select(p => p.drive)).Where(char.IsLetter).Distinct().OrderBy(c => c);
+        // the pass works on the first drive in its order that still has files left
+        char contentAt = content.Where(p => p.left > 0).Select(p => p.drive).FirstOrDefault(d => true, '\0');
+        char thumbsAt = thumbs.Where(p => p.left > 0).Select(p => p.drive).FirstOrDefault(d => true, '\0');
+        string contentWord = App.Content.Paused ? "paused" : App.Content.IsRunning ? "working" : "";
+        string thumbWord = App.ThumbPass.Paused ? "paused" : App.ThumbPass.WaitingForContent ? "waiting for contents" : App.ThumbPass.IsRunning ? "working" : "";
+        string names = App.Index.State == Core.Indexing.IndexState.Ready ? "100%" : App.Index.State.ToString();
+        return letters.Select(d =>
+        {
+            string root = d + ":\\";
+            string label = _labels.GetOrAdd(d, _ =>
+            {
+                try { var di = new DriveInfo(root); return di.IsReady ? di.VolumeLabel : "(not ready)"; } catch { return ""; }
+            });
+            return new DriveRow(d + ":", label, Core.Indexing.ContentIndexer.KindName(root), names,
+                Cell(content, d, d == contentAt ? contentWord : ""), Cell(thumbs, d, d == thumbsAt ? thumbWord : ""));
+        }).ToList();
+    }
+
+    /// <summary>"37% (12,345 / 33,000) · working"; "—" before the pass has run; never rounds up to 100% while files are left.</summary>
+    private static string Cell(IReadOnlyList<(char drive, int total, int left)> progress, char d, string word)
+    {
+        if (progress.Count == 0) return "—";
+        var p = progress.FirstOrDefault(x => x.drive == d);
+        if (p.total == 0) return "nothing to do";
+        int done = p.total - p.left;
+        return $"{done * 100L / p.total}%  ({done:N0} / {p.total:N0})" + (p.left > 0 && word.Length > 0 ? " · " + word : "");
     }
 
     public void SavePage()
