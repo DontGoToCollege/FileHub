@@ -90,7 +90,7 @@ public sealed class ContentIndexer : IDisposable
                 {
                     if (_index.State != IndexState.Ready) { Thread.Sleep(2000); continue; }
                     _fullPassRequested = false;
-                    FullPass(ct);
+                    try { FullPass(ct); } finally { IsRunning = false; }   // a pass that fails partway must not look busy forever
                     lastPass = DateTime.UtcNow;
                     try { _db.Maintain(ct); } catch (Exception ex) { Log.Warn("meta.db upkeep failed: " + ex.Message); if (MetaDb.IsCorrupt(ex)) _db.RecoverRequested = true; }
                     continue;

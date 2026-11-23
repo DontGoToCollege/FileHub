@@ -2,6 +2,14 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.24
+
+### Changed
+- **Explorer's status line shows when file contents are being indexed.** Next to "Index: N items" it now says
+  "Indexing content 12,000 / 389,000" (or "Repairing the content index…") while that runs, and goes back to the item
+  count when it's done. Before, only Hub → Index showed it, so a content repair or first run looked like nothing
+  was happening.
+
 ## 0.3.23
 
 ### Fixed
