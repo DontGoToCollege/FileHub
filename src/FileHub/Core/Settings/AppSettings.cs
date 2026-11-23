@@ -226,7 +226,7 @@ public sealed class StartMenuSettings : SettingsBase
     private int _maxSearchResults = 8;
     private bool _showPowerButtons = true;
     private bool _showUserName = true;
-    private bool _searchContent;
+    private bool _searchContent = true;
 
     public bool ReplaceWinKey { get => _replaceWinKey; set => Set(ref _replaceWinKey, value); }
     public bool ReplaceWinE { get => _replaceWinE; set => Set(ref _replaceWinE, value); }
@@ -270,6 +270,9 @@ public sealed class AppSettings : SettingsBase
     public ExplorerSettings Explorer { get; set; } = new();
     public ContextMenuSettings ContextMenu { get; set; } = new();
     public StartMenuSettings StartMenu { get; set; } = new();
+    /// <summary>Settings format: Load raises older files one step at a time (1 = Start menu content search on). Files from
+    /// before it have none, so it starts at 0.</summary>
+    public int Version { get; set; }
     /// <summary>FileHub-level "open with" overrides: extension (no dot) -> program path.</summary>
     public Dictionary<string, string> Associations { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
@@ -291,7 +294,18 @@ public sealed class AppSettings : SettingsBase
             {
                 var json = File.ReadAllText(Paths.SettingsFile);
                 var s = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions);
-                if (s != null) { Current = s; return s; }
+                if (s != null)
+                {
+                    Current = s;
+                    if (s.Version < 1)
+                    {
+                        // 0.3.22: Start menu content search became the default; it was off, and every PC had to tick it by hand
+                        s.StartMenu.SearchContent = true;
+                        s.Version = 1;
+                        s.Save();
+                    }
+                    return s;
+                }
             }
         }
         catch (Exception ex) { Log.Error("Failed to load settings; using defaults", ex); }

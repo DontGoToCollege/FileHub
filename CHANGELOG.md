@@ -2,6 +2,13 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.22
+
+### Fixed
+- **The Start menu searches file contents on every PC.** "Also search file contents" was off unless you ticked it on
+  that PC, so on a PC where nobody had, typing a word that's only inside a file found nothing. It's now on by default,
+  and switched on once for existing installs (you can still turn it off in Hub → Start menu).
+
 ## 0.3.21
 
 ### Faster
