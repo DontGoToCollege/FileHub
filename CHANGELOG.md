@@ -2,6 +2,25 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.10
+
+### New
+- **Choose what's in Sort by:** Sort options → "Show in Sort by" ticks which sorts the Sort by menus offer (Name, Date,
+  Date modified, Date created, Type, Size, Extension). With "Remember sort for each folder" each folder can have its
+  own list (folders you haven't changed use the default list); with "Use the same sort for all folders" it's one list
+  everywhere. "Reset this folder to the default sort" also restores the default list.
+- **Explorer's view keys:** Ctrl+Shift+1 Extra large icons, 2 Large, 3 Medium, 4 Small, 5 List, 6 Details (shown in
+  the View menus).
+
+### Changed
+- **Date sorts newest first** when you pick it; going from Date to another sort goes back to A→Z.
+- **Details view: the area to the right of the last column is empty space,** like Explorer. Clicking it clears the
+  selection or starts a drag-select, and right-clicking it gives the folder menu (View, Sort by, New, Paste…).
+  Clicking inside the columns still selects the row.
+
+### Bug fixes
+- **Ctrl+Shift+N makes a new folder** again; it opened a new window instead.
+
 ## 0.3.9
 
 ### New

@@ -259,7 +259,7 @@ public partial class ExplorerPane : UserControl
     private void Sort_Click(object sender, RoutedEventArgs e)
     {
         var menu = new ContextMenu();
-        foreach (var (label, key) in ContextMenuBuilder.SortKeys)
+        foreach (var (label, key) in ContextMenuBuilder.ShownSortKeys(Tab.SortChoices))
         {
             var mi = new MenuItem { Header = label, IsChecked = Tab.SortBy == key }; var k = key; mi.Click += (_, _) => PickSort(k); menu.Items.Add(mi);
         }
@@ -267,13 +267,22 @@ public partial class ExplorerPane : UserControl
         var asc = new MenuItem { Header = "Ascending", IsChecked = !Tab.SortDescending }; asc.Click += (_, _) => Tab.SetSort(Tab.SortBy, false); menu.Items.Add(asc);
         var desc = new MenuItem { Header = "Descending", IsChecked = Tab.SortDescending }; desc.Click += (_, _) => Tab.SetSort(Tab.SortBy, true); menu.Items.Add(desc);
         menu.Items.Add(new Separator());
-        menu.Items.Add(ContextMenuBuilder.SortOptionsMenu(Execute));
+        menu.Items.Add(ContextMenuBuilder.SortOptionsMenu(Execute, Tab.SortChoices));
         OpenFlyout(menu, (FrameworkElement)sender);
     }
 
-    /// <summary>Picking the current sort again flips its order (like clicking a column header); another sort keeps the order.</summary>
+    /// <summary>
+    /// Picking the current sort again flips its order (like clicking a column header); another sort keeps the order,
+    /// except Date, which starts newest first.
+    /// </summary>
     private void PickSort(string key)
-        => Tab.SetSort(key, string.Equals(Tab.SortBy, key, StringComparison.OrdinalIgnoreCase) ? !Tab.SortDescending : Tab.SortDescending);
+    {
+        bool desc = string.Equals(Tab.SortBy, key, StringComparison.OrdinalIgnoreCase) ? !Tab.SortDescending
+                  : key == "Date" ? true              // newest first
+                  : Tab.SortBy == "Date" ? false      // leaving Date: back to the usual A→Z / smallest first
+                  : Tab.SortDescending;
+        Tab.SetSort(key, desc);
+    }
 
     private void SetSortScope(bool allFolders)
     {
@@ -286,9 +295,9 @@ public partial class ExplorerPane : UserControl
     private void View_Click(object sender, RoutedEventArgs e)
     {
         var menu = new ContextMenu();
-        foreach (var (label, mode) in new[] { ("Extra large icons", ViewMode.ExtraLargeIcons), ("Large icons", ViewMode.LargeIcons), ("Medium icons", ViewMode.MediumIcons), ("Small icons", ViewMode.SmallIcons), ("List", ViewMode.List), ("Details", ViewMode.Details) })
+        foreach (var (label, mode, gesture) in ContextMenuBuilder.ViewModes)
         {
-            var mi = new MenuItem { Header = label, IsChecked = Tab.View == mode }; var m = mode; mi.Click += (_, _) => Tab.SetView(m); menu.Items.Add(mi);
+            var mi = new MenuItem { Header = label, InputGestureText = gesture, IsChecked = Tab.View == mode }; var m = mode; mi.Click += (_, _) => Tab.SetView(m); menu.Items.Add(mi);
         }
         menu.Items.Add(new Separator());
         var cols = new MenuItem { Header = "Columns" };
@@ -455,7 +464,7 @@ public partial class ExplorerPane : UserControl
     private void OnContextMenu(IReadOnlyList<FileItem> items, bool background)
     {
         var sel = background ? Array.Empty<FileItem>() : items;
-        var menu = ContextMenuBuilder.Build(this, sel, Tab.IsVirtual ? null : Tab.Path, cmd => ExecuteFor(cmd, sel));
+        var menu = ContextMenuBuilder.Build(this, sel, Tab.IsVirtual ? null : Tab.Path, cmd => ExecuteFor(cmd, sel), Tab.SortChoices);
         menu.PlacementTarget = FileList; menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint; menu.IsOpen = true;
     }
 
@@ -532,7 +541,8 @@ public partial class ExplorerPane : UserControl
                 else if (cmd == "sortdir:asc") Tab.SetSort(Tab.SortBy, false);
                 else if (cmd == "sortdir:desc") Tab.SetSort(Tab.SortBy, true);
                 else if (cmd == "sortscope:folder" || cmd == "sortscope:all") SetSortScope(cmd == "sortscope:all");
-                else if (cmd == "sortreset") { var ex = AppSettings.Current.Explorer; Tab.SetSort(ex.DefaultSortBy, ex.DefaultSortDescending); }
+                else if (cmd == "sortreset") Tab.ResetSort();
+                else if (cmd.StartsWith("sortchoice:")) Tab.ToggleSortChoice(cmd[11..]);
                 break;
         }
     }

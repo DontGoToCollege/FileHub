@@ -20,15 +20,37 @@ public static class ContextMenuBuilder
     private static readonly HashSet<string> DedupeLabels = new(StringComparer.OrdinalIgnoreCase)
     { "Open", "Cut", "Copy", "Paste", "Delete", "Rename", "Properties", "Refresh", "View", "Sort by", "Group by", "Paste shortcut", "Undo", "Open in new tab", "Open in new window", "Open in Terminal", "Copy as path" };
 
-    /// <summary>Sort by choices shared by the toolbar Sort menu and the right-click menu.</summary>
+    /// <summary>Every sort the Sort by menus can offer, in menu order; which ones show is the owner's choice (Sort options).</summary>
     public static readonly (string Label, string Key)[] SortKeys =
-        { ("Name", "Name"), ("Date", "Date"), ("Date modified", "Modified"), ("Type", "Type"), ("Size", "Size"), ("Date created", "Created") };
+        { ("Name", "Name"), ("Date", "Date"), ("Date modified", "Modified"), ("Date created", "Created"), ("Type", "Type"), ("Size", "Size"), ("Extension", "Extension") };
 
-    /// <summary>"Sort options" submenu: whether sort changes stick to this folder or apply to all folders.</summary>
-    public static MenuItem SortOptionsMenu(Action<string> command)
+    /// <summary>The Sort by entries to show for this list of chosen keys (unknown keys ignored, menu order kept).</summary>
+    public static IEnumerable<(string Label, string Key)> ShownSortKeys(IReadOnlyCollection<string> choices)
+        => SortKeys.Where(k => choices.Contains(k.Key, StringComparer.OrdinalIgnoreCase));
+
+    /// <summary>The Explorer view hotkeys (Ctrl+Shift+1…6), in View menu order.</summary>
+    public static readonly (string Label, ViewMode Mode, string Gesture)[] ViewModes =
+    {
+        ("Extra large icons", ViewMode.ExtraLargeIcons, "Ctrl+Shift+1"), ("Large icons", ViewMode.LargeIcons, "Ctrl+Shift+2"),
+        ("Medium icons", ViewMode.MediumIcons, "Ctrl+Shift+3"), ("Small icons", ViewMode.SmallIcons, "Ctrl+Shift+4"),
+        ("List", ViewMode.List, "Ctrl+Shift+5"), ("Details", ViewMode.Details, "Ctrl+Shift+6"),
+    };
+
+    /// <summary>"Sort options" submenu: which sorts Sort by shows, and whether sort changes stick to this folder or apply to all folders.</summary>
+    public static MenuItem SortOptionsMenu(Action<string> command, IReadOnlyCollection<string> choices)
     {
         bool all = AppSettings.Current.Explorer.SortAllFolders;
         var opts = new MenuItem { Header = "Sort options" };
+        var shown = new MenuItem { Header = all ? "Show in Sort by (all folders)" : "Show in Sort by (this folder)" };
+        foreach (var (label, key) in SortKeys)
+        {
+            // stays open so several can be ticked in one go
+            var mi = new MenuItem { Header = label, IsCheckable = true, StaysOpenOnClick = true, IsChecked = choices.Contains(key, StringComparer.OrdinalIgnoreCase) };
+            var k = key; mi.Click += (_, _) => command("sortchoice:" + k);
+            shown.Items.Add(mi);
+        }
+        opts.Items.Add(shown);
+        opts.Items.Add(new Separator());
         var folder = new MenuItem { Header = "Remember sort for each folder", IsChecked = !all }; folder.Click += (_, _) => command("sortscope:folder"); opts.Items.Add(folder);
         var every = new MenuItem { Header = "Use the same sort for all folders", IsChecked = all }; every.Click += (_, _) => command("sortscope:all"); opts.Items.Add(every);
         opts.Items.Add(new Separator());
@@ -36,7 +58,7 @@ public static class ContextMenuBuilder
         return opts;
     }
 
-    public static ContextMenu Build(FrameworkElement owner, IReadOnlyList<FileItem> items, string? folder, Action<string> command)
+    public static ContextMenu Build(FrameworkElement owner, IReadOnlyList<FileItem> items, string? folder, Action<string> command, IReadOnlyCollection<string>? sortChoices = null)
     {
         var s = AppSettings.Current.ContextMenu;
         var menu = new ContextMenu();
@@ -59,16 +81,17 @@ public static class ContextMenuBuilder
         if (background)
         {
             var view = new MenuItem { Header = "View" };
-            foreach (var (label, mode) in new[] { ("Extra large icons", "ExtraLargeIcons"), ("Large icons", "LargeIcons"), ("Medium icons", "MediumIcons"), ("Small icons", "SmallIcons"), ("List", "List"), ("Details", "Details") })
-            { var mi = new MenuItem { Header = label }; mi.Click += (_, _) => command("view:" + mode); view.Items.Add(mi); }
+            foreach (var (label, mode, gesture) in ViewModes)
+            { var mi = new MenuItem { Header = label, InputGestureText = gesture }; mi.Click += (_, _) => command("view:" + mode); view.Items.Add(mi); }
             menu.Items.Add(view);
             var sort = new MenuItem { Header = "Sort by" };
-            foreach (var (label, key) in SortKeys)
+            var choices = sortChoices ?? AppSettings.Current.Explorer.SortChoices;
+            foreach (var (label, key) in ShownSortKeys(choices))
             { var mi = new MenuItem { Header = label }; mi.Click += (_, _) => command("sort:" + key); sort.Items.Add(mi); }
             sort.Items.Add(new Separator());
             foreach (var (l, c) in new[] { ("Ascending", "sortdir:asc"), ("Descending", "sortdir:desc") }) { var mi = new MenuItem { Header = l }; mi.Click += (_, _) => command(c); sort.Items.Add(mi); }
             sort.Items.Add(new Separator());
-            sort.Items.Add(SortOptionsMenu(command));
+            sort.Items.Add(SortOptionsMenu(command, choices));
             menu.Items.Add(sort);
             Add("Refresh", "refresh", "F5");
             menu.Items.Add(new Separator());

@@ -106,6 +106,9 @@ public partial class ExplorerWindow : Window
             }
             e.Handled = true;
         }
+        // Explorer's view keys: Ctrl+Shift+1 extra large icons … Ctrl+Shift+6 details (before Ctrl+1…9, which switches tabs)
+        else if (ctrl && shift && key >= Key.D1 && key <= Key.D6) { pane?.Execute("view:" + ContextMenuBuilder.ViewModes[key - Key.D1].Mode); e.Handled = true; }
+        else if (ctrl && shift && key == Key.N) { pane?.Execute("newfolder"); e.Handled = true; }   // before Ctrl+N (new window)
         else if (ctrl && key >= Key.D1 && key <= Key.D9)
         {
             int n = key - Key.D1;
@@ -116,7 +119,6 @@ public partial class ExplorerWindow : Window
         else if (ctrl && key == Key.L || alt && key == Key.D) { pane?.BeginAddressEdit(); e.Handled = true; }
         else if (ctrl && (key == Key.F || key == Key.E)) { pane?.FocusSearch(); e.Handled = true; }
         else if (alt && key == Key.P) { pane?.TogglePreview(); e.Handled = true; }
-        else if (ctrl && shift && key == Key.N) { pane?.Execute("newfolder"); e.Handled = true; }
         else if (ctrl && shift && key == Key.C) { pane?.Execute("copypath"); e.Handled = true; }
         else if (key == Key.F5) { pane?.Execute("refresh"); e.Handled = true; }
         else if (key == Key.F1) { App.ShowHub(null, "help"); e.Handled = true; }

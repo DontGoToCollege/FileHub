@@ -106,6 +106,8 @@ public sealed class FolderView
     public string SortBy { get; set; } = "Name";
     public bool SortDescending { get; set; }
     public List<ColumnSpec> Columns { get; set; } = new();
+    /// <summary>This folder's own Sort by list; null = the default list.</summary>
+    public List<string>? SortChoices { get; set; }
 }
 
 public sealed class ExplorerSettings : SettingsBase
@@ -126,6 +128,8 @@ public sealed class ExplorerSettings : SettingsBase
     public bool DefaultSortDescending { get; set; }
     /// <summary>Sort changes apply to every folder (the default sort) instead of being remembered per folder.</summary>
     public bool SortAllFolders { get; set; }
+    /// <summary>Which sorts the Sort by menus show (keys as in ContextMenuBuilder.SortKeys); folders may have their own list.</summary>
+    public List<string> SortChoices { get; set; } = new() { "Name", "Date", "Modified", "Type", "Size", "Created" };
     public List<ColumnSpec> DefaultColumns { get; set; } = new()
     {
         new() { Key = "Name", Width = 340 }, new() { Key = "Modified", Width = 150 }, new() { Key = "Type", Width = 150 }, new() { Key = "Size", Width = 90 }

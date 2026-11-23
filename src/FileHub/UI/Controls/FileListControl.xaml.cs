@@ -272,7 +272,10 @@ public partial class FileListControl : UserControl
     {
         var hit = List.InputHitTest(p) as DependencyObject;
         while (hit != null && hit is not ListViewItem && hit != List) hit = VisualTreeHelper.GetParent(hit);
-        return (hit as ListViewItem)?.DataContext as FileItem;
+        if (hit is not ListViewItem row) return null;
+        // details view: right of the last column is empty space, like Explorer (click clears / drag-selects, right-click = folder menu)
+        if (_viewMode == ViewMode.Details && List.View == Grid && List.TranslatePoint(p, row).X > Grid.Columns.Sum(c => c.ActualWidth) + 4) return null;
+        return row.DataContext as FileItem;
     }
 
     private void List_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)

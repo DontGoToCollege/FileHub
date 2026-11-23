@@ -336,6 +336,32 @@ public sealed class ExplorerTab : ObservableObject
 
     public void SetView(ViewMode mode) { View = mode; PersistView(); }
 
+    private List<string>? _sortChoices;   // this folder's own Sort by list (null = the default list)
+
+    /// <summary>The sorts Sort by shows here: the folder's own list, or the default list when there is none or one sort applies to all folders.</summary>
+    public IReadOnlyCollection<string> SortChoices
+        => AppSettings.Current.Explorer.SortAllFolders || _sortChoices == null ? AppSettings.Current.Explorer.SortChoices : _sortChoices;
+
+    /// <summary>Shows or hides one sort in Sort by (never the last one), for this folder or, with one sort for all folders, everywhere.</summary>
+    public void ToggleSortChoice(string key)
+    {
+        var set = new HashSet<string>(SortChoices, StringComparer.OrdinalIgnoreCase);
+        if (!set.Remove(key)) set.Add(key);
+        if (set.Count == 0) return;
+        var list = ContextMenuBuilder.SortKeys.Select(k => k.Key).Where(set.Contains).ToList();
+        var ex = AppSettings.Current.Explorer;
+        if (ex.SortAllFolders) { ex.SortChoices = list; AppSettings.Current.Save(); }
+        else { _sortChoices = list; PersistView(); }
+    }
+
+    /// <summary>This folder goes back to the default sort and the default Sort by list.</summary>
+    public void ResetSort()
+    {
+        var ex = AppSettings.Current.Explorer;
+        _sortChoices = null;
+        SetSort(ex.DefaultSortBy, ex.DefaultSortDescending);
+    }
+
     public void SaveColumns(List<ColumnSpec> cols)
     {
         if (cols.Count == 0) return;
@@ -364,6 +390,7 @@ public sealed class ExplorerTab : ObservableObject
         View = fv?.View ?? ex.DefaultView;
         _sortBy = fv?.SortBy ?? ex.DefaultSortBy;
         _sortDesc = fv?.SortDescending ?? ex.DefaultSortDescending;
+        _sortChoices = fv?.SortChoices;
         var cols = fv != null && fv.Columns.Count > 0 ? fv.Columns : ex.DefaultColumns.Select(c => new ColumnSpec { Key = c.Key, Width = c.Width }).ToList();
         // only raise Columns when they actually differ: rebuilding the grid columns re-templates every row
         if (_columns.Count != cols.Count || _columns.Zip(cols).Any(p => p.First.Key != p.Second.Key || Math.Abs(p.First.Width - p.Second.Width) > 0.5)) Columns = cols;
@@ -373,7 +400,7 @@ public sealed class ExplorerTab : ObservableObject
     private void PersistView()
     {
         if (IsVirtual) return;
-        var fv = new FolderView { View = _view, SortBy = _sortBy, SortDescending = _sortDesc, Columns = _columns };
+        var fv = new FolderView { View = _view, SortBy = _sortBy, SortDescending = _sortDesc, Columns = _columns, SortChoices = _sortChoices };
         string path = _path;
         Task.Run(() => { try { App.Db.SetFolderView(path, JsonSerializer.Serialize(fv)); } catch (Exception e) { Log.Warn("Folder view save failed: " + e.Message); } });
     }
