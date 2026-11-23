@@ -19,6 +19,7 @@ public sealed class ExplorerTab : ObservableObject
     private string _path = HomePath;
     private string _title = "Home";
     private List<FileItem> _items = new();
+    private int _sortVersion;
     private bool _isLoading;
     private string _status = "";
     private ViewMode _view = AppSettings.Current.Explorer.DefaultView;
@@ -332,9 +333,13 @@ public sealed class ExplorerTab : ObservableObject
         var ex = AppSettings.Current.Explorer;
         if (ex.SortAllFolders) { ex.DefaultSortBy = key; ex.DefaultSortDescending = _sortDesc; AppSettings.Current.Save(); }
         OnPropertyChanged(nameof(SortBy)); OnPropertyChanged(nameof(SortDescending));
-        var items = _items.ToList();
-        SortItems(items);
-        Items = items;
+        // sorted off the window's thread (81,000 items: 0.3 s the window used to freeze for); a newer sort or a reload wins
+        var source = _items; var items = source.ToList();
+        string sortBy = _sortBy; bool desc = _sortDesc; int version = ++_sortVersion;
+        Task.Run(() => SortList(items, sortBy, desc)).ContinueWith(t =>
+        {
+            if (t.IsCompletedSuccessfully && version == _sortVersion && ReferenceEquals(_items, source)) Items = items;
+        }, TaskScheduler.FromCurrentSynchronizationContext());
         PersistView();
     }
 

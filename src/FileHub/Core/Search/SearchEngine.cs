@@ -119,17 +119,17 @@ public sealed class SearchEngine
             // with IncludeContent, name matches stay first in disk order and the content-only matches follow
             var nameRoot = parsed.NameRoot;
             var key = new long[all.Length];
-            nameHits = 0;
-            for (int k = 0; k < all.Length; k++)
+            // on every core: a path and its place for each of ~10,000 content matches took 15-25 ms on one
+            Parallel.For(0, all.Length, k =>
             {
                 string? p = null;
-                if (nameRoot != null && nameRoot.Match(index, all[k], ref entries[all[k]], ref p)) { key[k] = k; nameHits++; continue; }
+                if (nameRoot != null && nameRoot.Match(index, all[k], ref entries[all[k]], ref p)) { key[k] = k; return; }
                 p ??= index.PathOf(all[k]);
                 // within each place: documents (txt, md, docx, pdf…) before source code
                 int group = PlaceTier(p) * 2 + (FileTypes.IsIn("document", FileTypes.ExtensionOf(p)) ? 0 : 1);
                 key[k] = 1L << 40 | (long)group << 32 | (uint)(rank.TryGetValue(p, out int r) ? r : int.MaxValue);
-            }
-            if (nameRoot == null) nameHits = all.Length;
+            });
+            nameHits = nameRoot == null ? all.Length : key.Count(x => x < 1L << 40);
             Array.Sort(key, all);
         }
 
@@ -247,6 +247,14 @@ public sealed class SearchEngine
         return na.CompareTo(nb);   // a folder before what is inside it
     }
 
+    /// <summary><see cref="FileTypes.ExtensionOf"/> as a view into the name: sorting by type no longer copies two extensions per comparison.</summary>
+    private static ReadOnlySpan<char> Ext(string? name)
+    {
+        if (name is null) return default;
+        int dot = name.LastIndexOf('.');
+        return dot < 0 || dot == name.Length - 1 ? default : name.AsSpan(dot + 1);
+    }
+
     public static IComparer<int> MakeComparer(FileIndex index, SortKey key, bool desc)
     {
         // a file deleted by the live indexer mid-sort has a null name; compare it as "" instead of crashing
@@ -258,11 +266,11 @@ public sealed class SearchEngine
             SortKey.Size => (a, b) => entries[a].Size.CompareTo(entries[b].Size),
             SortKey.Modified => (a, b) => entries[a].Modified.CompareTo(entries[b].Modified),
             SortKey.Created => (a, b) => entries[a].Created.CompareTo(entries[b].Created),
-            SortKey.Extension => (a, b) => string.Compare(FileTypes.ExtensionOf(entries[a].Name ?? ""), FileTypes.ExtensionOf(entries[b].Name ?? ""), StringComparison.OrdinalIgnoreCase),
+            SortKey.Extension => (a, b) => Ext(entries[a].Name).CompareTo(Ext(entries[b].Name), StringComparison.OrdinalIgnoreCase),
             SortKey.Type => (a, b) =>
             {
                 int d = entries[b].IsDirectory.CompareTo(entries[a].IsDirectory);
-                return d != 0 ? d : string.Compare(FileTypes.ExtensionOf(entries[a].Name ?? ""), FileTypes.ExtensionOf(entries[b].Name ?? ""), StringComparison.OrdinalIgnoreCase);
+                return d != 0 ? d : Ext(entries[a].Name).CompareTo(Ext(entries[b].Name), StringComparison.OrdinalIgnoreCase);
             },
             SortKey.Path => (a, b) => ComparePaths(entries, a, b),
             _ => (a, b) => a.CompareTo(b),

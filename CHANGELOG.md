@@ -2,6 +2,17 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.21
+
+### Faster
+- **Typing in the Start menu and Hub is quicker once file contents join in** (from the third letter). Putting your
+  own documents first among the content matches now runs on every core: "want" 60–88 → 42 ms, "report"
+  93 → 67 ms.
+- **Sorting by Type or Extension is about twice as fast** (it no longer copies two extensions per comparison):
+  10,000 results 44 → 18 ms.
+- **Sorting a big folder in Explorer no longer freezes the window.** The sort runs in the background and the list
+  updates when it's done (a folder of 81,000 files took 0.3 s, during which the window didn't respond).
+
 ## 0.3.20
 
 ### Faster
