@@ -230,7 +230,7 @@
                 <ControlTemplate TargetType="TextBox">
                     <Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" SnapsToDevicePixels="True">
                         <Grid>
-                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="Center"/>
+                            <ScrollViewer x:Name="PART_ContentHost" VerticalAlignment="Center"/> <!-- TextBox applies Padding itself; binding it here too doubled it -->
                             <Border x:Name="focus" Height="2" VerticalAlignment="Bottom" Background="{DynamicResource AccentBrush}" Visibility="Collapsed" CornerRadius="0,0,4,4" Margin="1,0,1,0"/>
                         </Grid>
                     </Border>

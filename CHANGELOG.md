@@ -2,6 +2,13 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.3
+
+### Bug fixes
+- **Typed text in search boxes was shifted right.** Every text box applied its padding twice, so text and the cursor
+  started well to the right of the "Search…" hint (Start menu, Explorer search, and other boxes). Text now starts
+  exactly where the hint does.
+
 ## 0.3.2
 
 ### Enhancements
