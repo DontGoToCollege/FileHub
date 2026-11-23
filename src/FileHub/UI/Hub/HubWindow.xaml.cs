@@ -15,6 +15,7 @@ public partial class HubWindow : Window
     public HubWindow()
     {
         InitializeComponent();
+        Title += " - ver. " + App.Version;
         ThemeManager.ApplyToWindow(this);
         IndexingStatus.Subscribe(OnStatus);
         OnStatus();

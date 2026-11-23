@@ -139,7 +139,7 @@ public partial class ExplorerPane : UserControl
         }
         Crumbs.ItemsSource = list;
         CrumbScroll.ScrollToRightEnd();
-        Window.GetWindow(this)?.SetValue(Window.TitleProperty, Tab.Title + " - FileHub");
+        Window.GetWindow(this)?.SetValue(Window.TitleProperty, Tab.Title + App.TitleSuffix);
     }
 
     private void UpdateSelectionStatus()

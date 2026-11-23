@@ -17,6 +17,9 @@ namespace FileHub;
 
 public partial class App : Application
 {
+    public static readonly string Version = typeof(App).Assembly.GetName().Version?.ToString(3) ?? "?";
+    /// <summary>End of every window title: "Home - FileHub - ver. 0.3.33".</summary>
+    public static readonly string TitleSuffix = " - FileHub - ver. " + Version;
     public static AppSettings Settings { get; private set; } = null!;
     public static IndexService Index { get; private set; } = null!;
     public static MetaDb Db { get; private set; } = null!;
@@ -65,7 +68,7 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += (_, ex) => Log.Error("Unhandled exception", ex.ExceptionObject as Exception);
         TaskScheduler.UnobservedTaskException += (_, ex) => { Log.Error("Unobserved task exception", ex.Exception); ex.SetObserved(); };
 
-        Log.Info($"FileHub {typeof(App).Assembly.GetName().Version?.ToString(3)} starting ({string.Join(" ", args)})");
+        Log.Info($"FileHub {Version} starting ({string.Join(" ", args)})");
         Settings = AppSettings.Load();
         ThemeManager.Apply(Settings.General.Theme);
 

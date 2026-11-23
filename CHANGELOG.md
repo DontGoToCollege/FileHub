@@ -2,6 +2,12 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.33
+
+### Changed
+- **Window titles show the version.** Explorer reads "Home - FileHub - ver. 0.3.33" and the Hub "File Hub - ver. 0.3.33",
+  so it's easy to see which build a PC is running.
+
 ## 0.3.32
 
 ### Changed

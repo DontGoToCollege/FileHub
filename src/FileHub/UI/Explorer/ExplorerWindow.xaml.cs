@@ -57,7 +57,7 @@ public partial class ExplorerWindow : Window
         _active = entry;
         entry.IsActive = true;
         Host.Content = entry.Pane;
-        Title = entry.Tab.Title + " - FileHub";
+        Title = entry.Tab.Title + App.TitleSuffix;
         Dispatcher.BeginInvoke(() => entry.Pane.FocusList(), System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
