@@ -2,6 +2,13 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.35
+
+### Fixed
+- **Deleting a big folder could freeze FileHub for seconds.** Removing a folder from the index scanned the whole index once per
+  subfolder (a folder with 5,000 subfolders: about 7 s, during which folder listings and searches waited). It now takes one pass
+  (5,000 subfolders: a few milliseconds).
+
 ## 0.3.34
 
 ### Fixed

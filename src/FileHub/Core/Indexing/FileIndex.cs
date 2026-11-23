@@ -105,15 +105,23 @@ public sealed class FileIndex
     {
         ref var e = ref _entries[id];
         if (e.Name is null) return;
-        if (e.IsDirectory)
-        {
-            _dirs.Remove(PathOf(id));
-            foreach (int child in ChildListNoLock(id).ToArray()) RemoveNoLock(child);
-            _childrenCache.Remove(id);
-        }
         if (_childrenCache.TryGetValue(e.Parent, out var siblings)) siblings.Remove(id);
-        e.Name = null;
-        _deleted++;
+        if (!e.IsDirectory) { e.Name = null; _deleted++; return; }
+        // a folder: find its whole subtree in one forward pass (a child's id is always above its parent's, since entries
+        // are only appended and moves are remove + add), not one full-index scan per subfolder
+        var entries = _entries; int count = _count;
+        var inTree = new bool[count - id];
+        inTree[0] = true;
+        var gone = new List<int> { id };
+        for (int i = id + 1; i < count; i++)
+        {
+            int p = entries[i].Parent;
+            if (p >= id && entries[i].Name is not null && inTree[p - id]) { inTree[i - id] = true; gone.Add(i); }
+        }
+        foreach (int i in gone)
+            if (entries[i].IsDirectory) { _dirs.Remove(PathOf(i)); _childrenCache.Remove(i); }   // paths read before any name is cleared
+        foreach (int i in gone) entries[i].Name = null;
+        _deleted += gone.Count;
     }
 
     public void Rename(int id, string newName)
