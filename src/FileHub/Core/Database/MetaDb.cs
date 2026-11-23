@@ -20,6 +20,64 @@ public sealed class MetaDb : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
         _file = file;
         _connString = new SqliteConnectionStringBuilder { DataSource = file, Cache = SqliteCacheMode.Private, Pooling = true /* private cache + WAL: readers never wait on the content indexer's writes */ }.ToString();
+        try { Init(); }
+        catch (Exception ex) when (IsCorrupt(ex)) { Recover(); }
+    }
+
+    /// <summary>SQLite's "malformed" (11) or "not a database" (26): the file is damaged, and only a fresh one helps.</summary>
+    public static bool IsCorrupt(Exception ex) => ex is SqliteException { SqliteErrorCode: 11 or 26 };
+
+    /// <summary>Set when a search or write hits a damaged file; the content indexer then calls <see cref="Recover"/>.</summary>
+    public volatile bool RecoverRequested;
+    private int _recoveries;
+
+    /// <summary>
+    /// Replaces a damaged meta.db with a fresh one, with no action from the user. Everything in it can be rebuilt (the
+    /// content indexer re-reads the files, thumbnails are made again) except folder views and saved values, which are
+    /// carried over when they can still be read. Once per run, so a damage that keeps coming back can't loop re-indexing.
+    /// </summary>
+    public void Recover()
+    {
+        lock (_writeLock)
+        {
+            if (_recoveries++ > 0) { RecoverRequested = false; Log.Warn("meta.db is damaged again; not replacing it twice in one run"); return; }
+            Log.Warn("meta.db is damaged ('malformed'); replacing it with a fresh one and re-indexing file contents");
+            var views = new List<(string, string)>(); var values = new List<(string, string)>();
+            void Salvage(string sql, List<(string, string)> into)
+            {
+                try
+                {
+                    using var c = Open(); using var cmd = c.CreateCommand(); cmd.CommandText = sql;
+                    using var r = cmd.ExecuteReader();
+                    while (r.Read()) if (!r.IsDBNull(0) && !r.IsDBNull(1)) into.Add((r.GetString(0), r.GetString(1)));
+                }
+                catch (Exception ex) { Log.Warn("Could not carry over from the damaged meta.db: " + ex.Message); }
+            }
+            Salvage("SELECT path, json FROM folder_views", views);
+            Salvage("SELECT key, value FROM kv WHERE key <> 'fts_v2_cursor'", values);
+            SqliteConnection.ClearAllPools();
+            // the WAL first: a fresh file must never meet the old file's WAL
+            foreach (var f in new[] { _file + "-wal", _file + "-shm", _file })
+                for (int i = 0; ; i++)
+                {
+                    try { File.Delete(f); break; }
+                    catch (IOException) when (i < 40) { Thread.Sleep(250); SqliteConnection.ClearAllPools(); }   // a search may still have it open
+                }
+            Init();
+            using (var c = Open())
+            using (var tx = c.BeginTransaction())
+            {
+                foreach (var (p, j) in views) { using var cmd = c.CreateCommand(); cmd.Transaction = tx; cmd.CommandText = "INSERT OR REPLACE INTO folder_views(path, json) VALUES($p,$j)"; cmd.Parameters.AddWithValue("$p", p); cmd.Parameters.AddWithValue("$j", j); cmd.ExecuteNonQuery(); }
+                foreach (var (k, v) in values) { using var cmd = c.CreateCommand(); cmd.Transaction = tx; cmd.CommandText = "INSERT OR REPLACE INTO kv(key, value) VALUES($k,$v)"; cmd.Parameters.AddWithValue("$k", k); cmd.Parameters.AddWithValue("$v", v); cmd.ExecuteNonQuery(); }
+                tx.Commit();
+            }
+            RecoverRequested = false;
+            Log.Info($"Fresh meta.db ready ({views.Count} folder views and {values.Count} saved values carried over); file contents are being re-indexed");
+        }
+    }
+
+    private void Init()
+    {
         using var c = Open();
         // auto_vacuum only takes on a new file; older ones are switched by Maintain's one-time VACUUM
         Exec(c, "PRAGMA auto_vacuum=INCREMENTAL; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY;");
@@ -366,7 +424,7 @@ public sealed class MetaDb : IDisposable
                 while (r.Read()) { var p = r.GetString(0); if (seen.Add(p)) results.Add(p); }
             }
         }
-        catch (SqliteException ex) { Log.Warn("FTS query failed: " + ex.Message); }
+        catch (SqliteException ex) { Log.Warn("FTS query failed: " + ex.Message); if (IsCorrupt(ex)) RecoverRequested = true; }
         return results;
     }
 

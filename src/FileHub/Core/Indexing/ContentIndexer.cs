@@ -76,6 +76,8 @@ public sealed class ContentIndexer : IDisposable
         {
             try
             {
+                // a damaged meta.db (seen by a search or a write here) is replaced, then every file is read again
+                if (_db.RecoverRequested) { Status("Repairing the content index…"); _db.Recover(); RequestFullPass(); Status("Idle"); }
                 // one try per run: if it fails, indexing carries on with the old table (writes work on both) and it resumes next start
                 if (!upgraded) { upgraded = true; Status("Upgrading the content index (one time)…"); _db.UpgradeContentFts(ct); Status("Idle"); }
                 if (_paused) { Thread.Sleep(1000); continue; }
@@ -90,12 +92,13 @@ public sealed class ContentIndexer : IDisposable
                     _fullPassRequested = false;
                     FullPass(ct);
                     lastPass = DateTime.UtcNow;
-                    try { _db.Maintain(ct); } catch (Exception ex) { Log.Warn("meta.db upkeep failed: " + ex.Message); }
+                    try { _db.Maintain(ct); } catch (Exception ex) { Log.Warn("meta.db upkeep failed: " + ex.Message); if (MetaDb.IsCorrupt(ex)) _db.RecoverRequested = true; }
                     continue;
                 }
                 Thread.Sleep(1000);
             }
             catch (OperationCanceledException) { return; }
+            catch (Exception ex) when (MetaDb.IsCorrupt(ex)) { Log.Warn("Content index damaged: " + ex.Message); _db.RecoverRequested = true; }
             catch (Exception ex) { Log.Error("Content indexer loop error", ex); Thread.Sleep(5000); }
         }
     }

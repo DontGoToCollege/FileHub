@@ -2,6 +2,15 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.23
+
+### Fixed
+- **A damaged content database now repairs itself.** If meta.db gets damaged (SQLite: "database disk image is
+  malformed"), content search used to find nothing and the content indexer failed every 5 seconds, for good. FileHub
+  now notices on the first failed search or write, replaces meta.db with a fresh one and reads your files again in the
+  background. Folder view settings are carried over when they can still be read; thumbnails are simply made again.
+  Nothing to click. It happens at most once per run, so damage that keeps coming back can't loop.
+
 ## 0.3.22
 
 ### Fixed
