@@ -2,6 +2,15 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.26
+
+### Faster
+- **Small files are indexed first.** Within each place (your folders, then elsewhere, then Windows and programs),
+  content indexing now does files under 64 KB first, then under 1 MB, then the big ones. Storing a file costs about
+  what its text weighs, so the number of searchable files climbs much faster; the few big files fill in last. Files
+  in the same folder are still read together, so a hard drive doesn't have to jump around. Photos and other files read
+  only for their details count as small. Every file is still indexed in full.
+
 ## 0.3.25
 
 ### Faster

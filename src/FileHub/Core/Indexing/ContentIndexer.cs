@@ -144,7 +144,13 @@ public sealed class ContentIndexer : IDisposable
             wantMeta &= !haveProps.Contains(stamp);
             if (wantContent || wantMeta) todo.Add((i, path, ext, e.Modified, e.Size, wantContent, wantMeta, SearchEngine.PlaceTier(path)));
         }
-        todo.Sort((a, b) => a.tier != b.tier ? a.tier.CompareTo(b.tier) : a.id.CompareTo(b.id));   // crawl order within a place: neighbours on disk
+        // within a place, small files first (storing costs about what the text weighs, so most files are searchable soonest),
+        // in three size groups rather than strictly by size: crawl order inside a group keeps a hard drive reading neighbours
+        // (a photo read only for its details costs the same at any size, so it counts as small)
+        static int SizeGroup(long size, bool content) => !content || size < 64 * 1024 ? 0 : size < 1024 * 1024 ? 1 : 2;
+        todo.Sort((a, b) => a.tier != b.tier ? a.tier.CompareTo(b.tier)
+            : SizeGroup(a.size, a.content) != SizeGroup(b.size, b.content) ? SizeGroup(a.size, a.content).CompareTo(SizeGroup(b.size, b.content))
+            : a.id.CompareTo(b.id));
         Candidates = todo.Count; Processed = 0;
         Status($"Indexing content 0 / {Candidates:N0}");
 
