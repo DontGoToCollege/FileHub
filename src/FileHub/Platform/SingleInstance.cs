@@ -14,9 +14,14 @@ public sealed class SingleInstance : IDisposable
     public bool IsFirstInstance { get; private set; }
     public event Action<string[]>? ArgsReceived;
 
-    public bool TryAcquire()
+    public bool TryAcquire(int waitMs = 0)
     {
         _mutex = new Mutex(true, MutexName, out bool created);
+        if (!created && waitMs > 0)
+        {
+            try { created = _mutex.WaitOne(waitMs); }
+            catch (AbandonedMutexException) { created = true; }   // the old instance ended without releasing it: ours now
+        }
         IsFirstInstance = created;
         return created;
     }

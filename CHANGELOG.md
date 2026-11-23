@@ -2,6 +2,15 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.9
+
+### New
+- **Move data folder…** in Settings → General (next to Open data folder): pick a folder and FileHub closes, moves its
+  data and logs into a `FileHub-Data` folder there, and starts again. Works across drives (it copies, then removes the
+  old folder; several GB can take a few minutes). It refuses a folder that already has files in it. The chosen
+  location is remembered in `FileHub-Data.location` next to `FileHub.exe`; pick the exe's own folder to go back to the
+  default. Also available as `FileHub.exe --move-data <folder>`.
+
 ## 0.3.8
 
 ### New

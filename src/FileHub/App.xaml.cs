@@ -44,13 +44,15 @@ public partial class App : Application
         TestMode = args.Contains("--test", StringComparer.OrdinalIgnoreCase);
 
         _single = new SingleInstance();
-        if (!_single.TryAcquire())
+        // --restart: the old instance is still shutting down (saving the index), so wait for it instead of forwarding
+        bool restart = args.Contains("--restart", StringComparer.OrdinalIgnoreCase);
+        if (!_single.TryAcquire(restart ? 60_000 : 0))
         {
             SingleInstance.SendToRunningInstance(args);
             Shutdown();
             return;
         }
-        Paths.MoveLegacyData();
+        Paths.PrepareDataDir();
 
         DispatcherUnhandledException += (_, ex) =>
         {
@@ -102,6 +104,7 @@ public partial class App : Application
                 case "--show": ShowExplorer(); any = true; break;
                 case "--rebuild": _ = Index.RebuildAsync(); any = true; break;
                 case "--exit": ExitApp(); return;
+                case "--move-data" when i + 1 < args.Length: MoveDataTo(args[++i], interactive: false); return;
                 case "--set-text" when TestMode && i + 2 < args.Length:
                     // UI Automation's SetValue focuses the box (and so the window); this fills it without any focus change
                     SetTestText(args[i + 1], args[i + 2]); i += 2; any = true; break;
@@ -302,6 +305,21 @@ public partial class App : Application
         Index.SetRealTime(on);
         Settings.Save();
         IndexControlChanged?.Invoke();
+    }
+
+    /// <summary>Schedules the data folder move, then restarts: the move itself runs at startup, before anything opens the data.</summary>
+    public static void MoveDataTo(string folder, bool interactive)
+    {
+        string? error = Paths.ScheduleMove(folder);
+        if (error != null)
+        {
+            Log.Warn("Move data folder: " + error);
+            if (interactive) MessageBox.Show(error, "Move data folder", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        Log.Info("Restarting to move the data folder to " + folder);
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!, "--tray --restart" + (TestMode ? " --test" : "")) { UseShellExecute = false });
+        ExitApp();
     }
 
     public static void ExitApp()

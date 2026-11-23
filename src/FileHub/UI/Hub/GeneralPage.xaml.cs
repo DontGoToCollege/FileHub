@@ -35,5 +35,15 @@ public partial class GeneralPage : UserControl, ISavablePage
 
     private void OpenData_Click(object sender, RoutedEventArgs e) => ShellUtil.Open(Paths.DataDir);
     private void OpenLogs_Click(object sender, RoutedEventArgs e) => ShellUtil.Open(Log.Directory);
+    private void MoveData_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new Microsoft.Win32.OpenFolderDialog { Title = "Choose where FileHub keeps its data and logs (a FileHub-Data folder is made inside it)" };
+        if (dlg.ShowDialog(Window.GetWindow(this)) != true) return;
+        if (MessageBox.Show($"FileHub will close, move its data and logs into a FileHub-Data folder in\n{dlg.FolderName}\nand start again.\n\nMoving to another drive copies everything (several GB) and can take a few minutes, during which FileHub isn't running.",
+                "Move data folder", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
+        SavePage();
+        App.MoveDataTo(dlg.FolderName, interactive: true);
+    }
+
     private void Exit_Click(object sender, RoutedEventArgs e) { SavePage(); App.ExitApp(); }
 }
