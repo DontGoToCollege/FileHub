@@ -2,6 +2,14 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.36
+
+### Added
+- **The log now catches FileHub freezing.** Any moment its windows are stuck for over 300 ms is logged (`UI thread busy N ms`);
+  one over 1 s also saves what every thread was doing to `logs\stall-<time>.txt` (needs dotnet-stack, installed by rules-band).
+  Opening a file whose launch takes over 300 ms inside FileHub is logged too (`Slow open`). This is to find why opening a file
+  sometimes takes seconds: a quiet test opened an image in about 0.45 s, with FileHub's own part about 30 ms.
+
 ## 0.3.35
 
 ### Fixed

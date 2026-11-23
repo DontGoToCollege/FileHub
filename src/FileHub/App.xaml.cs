@@ -69,6 +69,7 @@ public partial class App : Application
         TaskScheduler.UnobservedTaskException += (_, ex) => { Log.Error("Unobserved task exception", ex.Exception); ex.SetObserved(); };
 
         Log.Info($"FileHub {Version} starting ({string.Join(" ", args)})");
+        UiWatchdog.Start(Dispatcher);
         Settings = AppSettings.Load();
         ThemeManager.Apply(Settings.General.Theme);
 

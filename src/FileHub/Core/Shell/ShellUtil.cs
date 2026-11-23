@@ -48,8 +48,10 @@ public static class ShellUtil
             lpDirectory = Directory.Exists(file) ? file : Path.GetDirectoryName(file),
             nShow = Native.SW_SHOWNORMAL,
         };
+        var sw = Stopwatch.StartNew();
         bool ok = Native.ShellExecuteExW(ref info);
         if (!ok) Log.Warn($"ShellExecuteEx({verb}) failed for {file}: {Marshal.GetLastWin32Error()}");
+        if (sw.ElapsedMilliseconds > 300) Log.Info($"Slow open: ShellExecuteEx({verb}) took {sw.ElapsedMilliseconds} ms for {file}");
         return ok;
     }
 
