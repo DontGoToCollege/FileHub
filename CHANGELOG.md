@@ -2,6 +2,17 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.13
+
+### Changed
+- **Content searches list your own documents first.** `content:` results used to come in disk order, so a note on
+  the Desktop could sit behind 1,500 program and library files that mention the same word. Now (when no sort is
+  picked) they're ordered: your folders (Desktop, Documents, Downloads, Pictures, Music, Videos, OneDrive) first,
+  then elsewhere, then Windows, program folders, app data and code libraries (venv, node_modules…); within each,
+  documents (txt, md, docx, pdf…) before code, then best match first.
+- Quieter log: the "folder removed from index" line for every temp folder is gone; removals of 10,000+ entries are
+  still logged.
+
 ## 0.3.12
 
 ### Bug fixes

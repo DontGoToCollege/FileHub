@@ -1,3 +1,4 @@
+using System.IO;
 using System.Diagnostics;
 using FileHub.Core.Database;
 using FileHub.Core.Indexing;
@@ -23,6 +24,32 @@ public sealed class SearchEngine
     public SearchEngine(IndexService indexService, MetaDb db)
     {
         _indexService = indexService; _db = db;
+    }
+
+    private static readonly string[] UserPlaces = new[]
+    {
+        Environment.GetFolderPath(Environment.SpecialFolder.Desktop), Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"),
+        Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), Environment.GetFolderPath(Environment.SpecialFolder.MyMusic),
+        Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), Environment.GetEnvironmentVariable("OneDrive") ?? "",
+    }.Where(p => p.Length > 0).Select(p => p.TrimEnd('\\') + "\\").ToArray();
+
+    private static readonly string[] SystemPlaces = new[]
+    {
+        Environment.GetFolderPath(Environment.SpecialFolder.Windows), Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+    }.Where(p => p.Length > 0).Select(p => p.TrimEnd('\\') + "\\").ToArray();
+
+    private static readonly string[] CodeLibraryParts = { "\\node_modules\\", "\\site-packages\\", "\\venv\\", "\\.venv\\", "\\.git\\", "\\bin\\", "\\obj\\", "\\$Recycle.Bin\\" };
+
+    /// <summary>0 = your folders (Desktop, Documents…), 1 = elsewhere, 2 = Windows / programs / app data / code libraries.</summary>
+    internal static int PlaceTier(string path)
+    {
+        if (CodeLibraryParts.Any(s => path.Contains(s, StringComparison.OrdinalIgnoreCase))) return 2;
+        if (SystemPlaces.Any(s => path.StartsWith(s, StringComparison.OrdinalIgnoreCase))) return 2;
+        if (UserPlaces.Any(s => path.StartsWith(s, StringComparison.OrdinalIgnoreCase))) return 0;
+        return 1;
     }
 
     public SearchResult Search(string text, SearchOptions options, CancellationToken ct)
@@ -78,6 +105,20 @@ public sealed class SearchEngine
                 Array.Sort(all, 0, all.Length, Comparer<int>.Create((a, b) => a.CompareTo(b)));
             else
                 Array.Sort(all, cmp);
+        }
+        else if (parsed.ContentRank is { Count: > 0 } rank && all.Length > 1)
+        {
+            // no sort chosen: content searches list the best matches first, not in disk order
+            // your own documents before program files and code libraries that happen to mention the word
+            var key = new long[all.Length];
+            for (int k = 0; k < all.Length; k++)
+            {
+                string p = index.PathOf(all[k]);
+                // within each place: documents (txt, md, docx, pdf…) before source code
+                int group = PlaceTier(p) * 2 + (FileTypes.IsIn("document", FileTypes.ExtensionOf(p)) ? 0 : 1);
+                key[k] = (long)group << 32 | (uint)(rank.TryGetValue(p, out int r) ? r : int.MaxValue);
+            }
+            Array.Sort(key, all);
         }
 
         var ids = all.Length > options.MaxResults ? all[..options.MaxResults] : all;

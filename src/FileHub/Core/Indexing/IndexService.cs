@@ -260,7 +260,6 @@ public sealed class IndexService : IDisposable
                 if (id >= 0 && index[id].Parent < 0) { Log.Warn("Ignored a delete event for drive root " + c.Path); break; }
                 // still on disk: a late or bogus event (e.g. an app that deletes and re-creates a file while saving)
                 if (id >= 0 && ExistsOnDisk(c.Path)) break;
-                if (id >= 0 && index[id].IsDirectory) Log.Info("Folder removed from index: " + c.Path);
                 if (id >= 0) RemoveLogged(index, id, c.Path);
                 FileChanged?.Invoke(c.Path, false);
                 break;
@@ -291,7 +290,6 @@ public sealed class IndexService : IDisposable
                 // the watcher reports the watched root as the old path when it lost the old name; treat it as a new item,
                 // never as "the drive moved" (removing the root would empty the whole index)
                 if (id >= 0 && index[id].Parent < 0) { Log.Warn($"Rename event with drive root as old path ({c.OldPath} -> {c.Path}); treated as new"); id = -1; }
-                if (id >= 0 && index[id].IsDirectory) Log.Info($"Folder renamed in index: {c.OldPath} -> {c.Path}");
                 string newName = Path.GetFileName(c.Path);
                 if (id >= 0)
                 {

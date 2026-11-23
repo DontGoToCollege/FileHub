@@ -225,6 +225,8 @@ public static class QueryParser
         public QueryNode Root { get; init; } = TrueNode.Instance;
         public bool HasContentTerm { get; init; }
         public int ContentMatches { get; init; }
+        /// <summary>Path → position in the first content:/meta: term's best-match-first list (for ordering unsorted results).</summary>
+        public IReadOnlyDictionary<string, int>? ContentRank { get; init; }
         public string? Error { get; init; }
     }
 
@@ -247,7 +249,7 @@ public static class QueryParser
                 extra.Add(new TypeNode(g));
             }
             QueryNode final = extra.Count == 0 ? TrueNode.Instance : extra.Count == 1 ? extra[0] : new AndNode(extra);
-            return new ParseResult { Root = final, HasContentTerm = p.HasContent, ContentMatches = p.ContentMatches };
+            return new ParseResult { Root = final, HasContentTerm = p.HasContent, ContentMatches = p.ContentMatches, ContentRank = p.ContentRank };
         }
         catch (Exception ex)
         {
@@ -260,6 +262,7 @@ public static class QueryParser
         private readonly string _s; private int _i;
         private readonly SearchOptions _o; private readonly FileIndex _index;
         public bool HasContent; public int ContentMatches;
+        public Dictionary<string, int>? ContentRank;
 
         public Parser(string s, SearchOptions o, FileIndex index) { _s = s; _o = o; _index = index; }
 
@@ -429,6 +432,11 @@ public static class QueryParser
                     if (_o.ContentSearch == null || value.Length == 0) return new PathSetNode(Array.Empty<string>());
                     var paths = _o.ContentSearch(value, _o.ContentLimit);
                     ContentMatches += paths.Count;
+                    if (ContentRank == null)
+                    {
+                        ContentRank = new Dictionary<string, int>(paths.Count, StringComparer.OrdinalIgnoreCase);
+                        for (int k = 0; k < paths.Count; k++) ContentRank.TryAdd(paths[k], k);
+                    }
                     return new PathSetNode(paths);
                 }
             }

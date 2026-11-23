@@ -236,7 +236,10 @@ public sealed class MetaDb : IDisposable
         return result;
     }
 
-    /// <summary>Full-text search over file contents (and optionally extracted properties). Returns matching paths.</summary>
+    /// <summary>
+    /// Full-text search over file contents (and optionally extracted properties). Returns matching paths, best match
+    /// first (FTS5 rank: a short note about the word beats a long licence file that mentions it once).
+    /// </summary>
     public List<string> SearchContent(string userQuery, int limit, bool includeProps = true)
     {
         var results = new List<string>();
@@ -245,14 +248,16 @@ public sealed class MetaDb : IDisposable
         try
         {
             using var c = Open();
-            using var cmd = c.CreateCommand();
-            cmd.CommandText = includeProps
-                ? "SELECT path FROM (SELECT path FROM content_fts WHERE content_fts MATCH $q LIMIT $n) UNION SELECT path FROM (SELECT path FROM props_fts WHERE props_fts MATCH $q LIMIT $n)"
-                : "SELECT path FROM content_fts WHERE content_fts MATCH $q LIMIT $n";
-            cmd.Parameters.AddWithValue("$q", match);
-            cmd.Parameters.AddWithValue("$n", limit);
-            using var r = cmd.ExecuteReader();
-            while (r.Read()) results.Add(r.GetString(0));
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var table in includeProps ? new[] { "content_fts", "props_fts" } : new[] { "content_fts" })
+            {
+                using var cmd = c.CreateCommand();
+                cmd.CommandText = $"SELECT path FROM {table} WHERE {table} MATCH $q ORDER BY rank LIMIT $n";
+                cmd.Parameters.AddWithValue("$q", match);
+                cmd.Parameters.AddWithValue("$n", limit);
+                using var r = cmd.ExecuteReader();
+                while (r.Read()) { var p = r.GetString(0); if (seen.Add(p)) results.Add(p); }
+            }
         }
         catch (SqliteException ex) { Log.Warn("FTS query failed: " + ex.Message); }
         return results;
