@@ -2,6 +2,17 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.18
+
+### Faster
+- **Photo thumbnails appear several times faster.** JPEG, PNG, BMP, GIF, TIFF and WebP thumbnails are now decoded
+  by FileHub itself on several threads at once, instead of queueing for Windows' thumbnailer, which makes them one
+  at a time (~23 ms each). A folder of 210 new photos: 4.9 s → 0.7 s; a screenful of Large icons: all 20 within
+  0.1 s. Videos, PDFs and other files still use Windows' thumbnails. Photos taken sideways are turned upright from
+  their camera tag, as before.
+- Saving a thumbnail to FileHub's cache no longer delays it showing (the save happens afterwards).
+- More loader threads on PCs with more cores (half the cores, 3 to 8).
+
 ## 0.3.17
 
 ### Smaller, and it stays that way
