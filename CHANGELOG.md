@@ -2,6 +2,17 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.25
+
+### Faster
+- **Content indexing reads several files at once.** It used to read one file, store it, then read the next, so on a
+  hard drive every file waited for the disk (35–80 files a second). Now 2–8 files are read at the same time while the
+  previous 500 are being stored, so a slow drive no longer holds everything up.
+- **Your own files are indexed first.** A first run or a repair now starts with your folders (Desktop, Documents,
+  Downloads, Music…), then everything else, then Windows, programs and code libraries, so the files you look for
+  become searchable within minutes instead of somewhere in the middle of a million.
+- The progress count now covers only the files that still need reading.
+
 ## 0.3.24
 
 ### Changed

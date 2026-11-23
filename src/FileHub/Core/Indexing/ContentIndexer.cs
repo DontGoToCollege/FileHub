@@ -124,7 +124,9 @@ public sealed class ContentIndexer : IDisposable
         var haveContent = _settings.Index.ContentIndexing ? _db.LoadContentIndexedPaths() : new HashSet<string>();
         var haveProps = _settings.Index.MetadataIndexing ? _db.LoadPropsIndexedPaths() : new HashSet<string>();
 
-        var todo = new List<int>();
+        // only what still needs reading; your own folders first (Desktop, Documents…), then elsewhere, then Windows,
+        // programs and code libraries, so a first run or a repair makes your files searchable within minutes
+        var todo = new List<(int id, string path, string ext, long modified, long size, bool content, bool meta, int tier)>();
         var entries = index.Entries; int count = index.Count;
         for (int i = 0; i < count; i++)
         {
@@ -135,60 +137,62 @@ public sealed class ContentIndexer : IDisposable
             bool wantContent = _settings.Index.ContentIndexing && contentExts.Contains(ext) && e.Size <= maxBytes;
             bool wantMeta = _settings.Index.MetadataIndexing && metaExts.Contains(ext);
             if (!wantContent && !wantMeta) continue;
-            todo.Add(i);
+            string path;
+            try { path = index.PathOf(i); } catch { continue; }
+            string stamp = path + "|" + e.Modified;
+            wantContent &= !haveContent.Contains(stamp);
+            wantMeta &= !haveProps.Contains(stamp);
+            if (wantContent || wantMeta) todo.Add((i, path, ext, e.Modified, e.Size, wantContent, wantMeta, SearchEngine.PlaceTier(path)));
         }
+        todo.Sort((a, b) => a.tier != b.tier ? a.tier.CompareTo(b.tier) : a.id.CompareTo(b.id));   // crawl order within a place: neighbours on disk
         Candidates = todo.Count; Processed = 0;
         Status($"Indexing content 0 / {Candidates:N0}");
 
-        var contentBatch = new List<(string, long, long, string)>();
-        var propsBatch = new List<(string, long, string, string)>();
-        int sinceReport = 0;
-        foreach (int id in todo)
+        // files are read on several threads while the previous chunk is written (the write is the slow part: ~500 files/s);
+        // one file at a time, every slow read held up the whole pass
+        const int chunk = 500;
+        int readers = Math.Clamp(Environment.ProcessorCount / 2, 2, 8);
+        Task<(List<(string, long, long, string)> content, List<(string, long, string, string)> props)> Read(int from) => Task.Run(() =>
         {
-            ct.ThrowIfCancellationRequested();
-            if (_paused || _fullPassRequested) break;
-            ref var e = ref entries[id];
-            if (e.Name is null) continue;
-            string path;
-            try { path = index.PathOf(id); } catch { continue; }
-            string ext = FileTypes.ExtensionOf(e.Name);
-            string stamp = path + "|" + e.Modified;
-            bool wantContent = _settings.Index.ContentIndexing && contentExts.Contains(ext) && e.Size <= maxBytes && !haveContent.Contains(stamp);
-            bool wantMeta = _settings.Index.MetadataIndexing && metaExts.Contains(ext) && !haveProps.Contains(stamp);
-            if (wantContent)
+            var content = new System.Collections.Concurrent.ConcurrentBag<(string, long, long, string)>();
+            var props = new System.Collections.Concurrent.ConcurrentBag<(string, long, string, string)>();
+            Parallel.For(from, Math.Min(todo.Count, from + chunk), new ParallelOptions { MaxDegreeOfParallelism = readers, CancellationToken = ct }, k =>
             {
-                string body = ExtractText(path, ext, maxBytes);
-                contentBatch.Add((path, e.Modified, e.Size, body));
-            }
-            if (wantMeta)
-            {
-                var props = PropertyReader.Read(path);
-                if (props.Count > 0)
+                var t = todo[k];
+                try
                 {
-                    string json = JsonSerializer.Serialize(props);
-                    string text = string.Join(" \n", props.Where(kv => kv.Key is not ("Width" or "Height" or "FrameWidth" or "FrameHeight" or "Bitrate")).Select(kv => kv.Value));
-                    propsBatch.Add((path, e.Modified, json, text));
+                    if (t.content) content.Add((t.path, t.modified, t.size, ExtractText(t.path, t.ext, maxBytes)));
+                    if (t.meta)
+                    {
+                        var p = PropertyReader.Read(t.path);
+                        if (p.Count == 0) { props.Add((t.path, t.modified, "{}", "")); return; }
+                        string text = string.Join(" \n", p.Where(kv => kv.Key is not ("Width" or "Height" or "FrameWidth" or "FrameHeight" or "Bitrate")).Select(kv => kv.Value));
+                        props.Add((t.path, t.modified, JsonSerializer.Serialize(p), text));
+                    }
                 }
-                else propsBatch.Add((path, e.Modified, "{}", ""));
-            }
-            Processed++;
-            if (contentBatch.Count >= 100) { _db.UpsertContentBatch(contentBatch); contentBatch.Clear(); }
-            if (propsBatch.Count >= 200) { _db.UpsertPropsBatch(propsBatch); propsBatch.Clear(); }
-            if (++sinceReport >= 250)
+                catch (Exception ex) { Log.Warn("Index read failed for " + t.path + ": " + ex.Message); }
+            });
+            return (content.ToList(), props.ToList());
+        }, ct);
+
+        var next = todo.Count > 0 ? Read(0) : null;
+        for (int from = 0; next != null; from += chunk)
+        {
+            var (content, props) = next.GetAwaiter().GetResult();
+            bool more = from + chunk < todo.Count && !_paused && !_fullPassRequested && !ct.IsCancellationRequested;
+            next = more ? Read(from + chunk) : null;
+            if (content.Count > 0) _db.UpsertContentBatch(content);
+            if (props.Count > 0) _db.UpsertPropsBatch(props);
+            Processed = Math.Min(todo.Count, from + chunk);
+            Status($"Indexing content {Processed:N0} / {Candidates:N0}");
+            // files saved meanwhile go first; the chunk being read may hold an older copy of one, so it's read again after
+            if (_changed.Reader.TryPeek(out _))
             {
-                sinceReport = 0; Status($"Indexing content {Processed:N0} / {Candidates:N0}"); Thread.Sleep(5);
-                // a long pass (first run, 40k+ files) must not hold up files saved meanwhile; flush first so this pass's
-                // older extracts can't overwrite the fresh ones
-                if (_changed.Reader.TryPeek(out _))
-                {
-                    if (contentBatch.Count > 0) { _db.UpsertContentBatch(contentBatch); contentBatch.Clear(); }
-                    if (propsBatch.Count > 0) { _db.UpsertPropsBatch(propsBatch); propsBatch.Clear(); }
-                    DrainChanged(ct);   // one batch per checkpoint, so a noisy disk can't stall the pass either
-                }
+                try { next?.Wait(); } catch { }
+                DrainChanged(ct);   // one batch per chunk, so a noisy disk can't stall the pass either
+                if (more) next = Read(from + chunk);
             }
         }
-        if (contentBatch.Count > 0) _db.UpsertContentBatch(contentBatch);
-        if (propsBatch.Count > 0) _db.UpsertPropsBatch(propsBatch);
         IsRunning = false;
         if (_paused) { Status($"Paused at {Processed:N0} / {Candidates:N0}"); return; }
         var stats = _db.Stats();
