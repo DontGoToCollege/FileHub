@@ -2,6 +2,27 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.2
+
+### Enhancements
+- **Drag-select (rubber band) in Explorer.** Drag from empty space, or from a row's blank area right of the Name
+  column in Details view, to select everything under the box. Ctrl toggles and Shift adds to the earlier selection;
+  dragging past the top or bottom edge scrolls and keeps selecting. Works in Details, List and icon views.
+- **Start menu customization** (Hub > Start menu > Layout), with the original look kept as the default:
+  - Style: Tiles (icon grid + folder chips) or List (two columns: pinned list and folders, like classic start menus).
+  - Search box at the top or the bottom; tile size small / medium / large; menu width and height; show or hide the
+    Windows folders section; "Reset layout to defaults".
+- **Pin and unpin from anywhere.** "Pin to FileHub Start" / "Unpin from FileHub Start" in the right-click menu of any
+  file or folder (Explorer, Hub, Start search results). In the start menu, right-click a tile to unpin it, move it
+  (to front, earlier, later) or open its location, or drag tiles onto each other to reorder; right-click a folder
+  shortcut to remove it.
+
+### Bug fixes
+- **Explorer search box tooltip** opened as one very wide line pushed away from the box; it is now wrapped and
+  anchored directly under the search box, and waits a little longer before appearing.
+- **Start menu position** is recalculated once the window exists, so the first opening can't use a wrong DPI guess.
+  Search result paths in the start menu are trimmed instead of showing a horizontal scrollbar.
+
 ## 0.3.1
 
 ### Bug fixes

@@ -95,6 +95,14 @@ public static class ContextMenuBuilder
                 }
                 if (s.ShowCopyPath) Add("Copy as path", "copypath", "Ctrl+Shift+C");
                 Add("Show in Windows Explorer", "showinexplorer");
+                if (single)
+                {
+                    string p = items[0].FullPath;
+                    bool pinned = App.IsPinnedToStart(p);
+                    var pin = new MenuItem { Header = pinned ? "Unpin from FileHub Start" : "Pin to FileHub Start" };
+                    pin.Click += (_, _) => { if (pinned) App.UnpinFromStart(p); else App.PinToStart(p); };
+                    menu.Items.Add(pin);
+                }
             }
         }
 

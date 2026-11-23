@@ -53,6 +53,8 @@ public partial class FileListControl : UserControl
     {
         InitializeComponent();
         Loaded += (_, _) => ApplyView();
+        _marqueeScroll.Tick += (_, _) => MarqueeAutoScroll();
+        List.LostMouseCapture += (_, _) => EndMarquee();
     }
 
     // ---------------------------------------------------------------- items
@@ -270,11 +272,23 @@ public partial class FileListControl : UserControl
         _deferredSelect = false;
         if (_pressedItem == null)
         {
-            // click on empty space: clear selection (unless on header / scrollbar)
+            // click on empty space: clear selection (unless on header / scrollbar) and start a drag-select
             var hit = List.InputHitTest(_dragStart) as DependencyObject;
             bool onHeader = false, onScroll = false;
             while (hit != null && hit != List) { if (hit is GridViewColumnHeader) onHeader = true; if (hit is ScrollBar) onScroll = true; hit = VisualTreeHelper.GetParent(hit); }
-            if (!onHeader && !onScroll && Keyboard.Modifiers == ModifierKeys.None) List.UnselectAll();
+            if (onHeader || onScroll) return;
+            if (Keyboard.Modifiers == ModifierKeys.None) List.UnselectAll();
+            StartMarquee(e, null);
+            return;
+        }
+        // details view: pressing a row's blank area right of the Name column starts a drag-select (Explorer behavior)
+        if (IsDetails && Keyboard.Modifiers == ModifierKeys.None && Grid.Columns.Count > 1
+            && List.ItemContainerGenerator.ContainerFromItem(_pressedItem) is ListViewItem row
+            && e.GetPosition(row).X > Grid.Columns[0].ActualWidth + 8)
+        {
+            var rowItem = _pressedItem;
+            _pressedItem = null;
+            if (StartMarquee(e, rowItem)) e.Handled = true;
             return;
         }
         // keep multi-selection intact when pressing on an already-selected item (Explorer behavior)
@@ -288,6 +302,14 @@ public partial class FileListControl : UserControl
 
     private void List_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        if (_marquee)
+        {
+            var rowItem = _marqueeMoved ? null : _marqueeRowItem;
+            EndMarquee();
+            if (rowItem != null) { List.SelectedItem = rowItem; FocusItem(rowItem); }   // plain click on a row's blank area
+            e.Handled = true;
+            return;
+        }
         if (_deferredSelect && _pressedItem != null)
         {
             var item = ItemAt(e.GetPosition(List));
@@ -297,8 +319,133 @@ public partial class FileListControl : UserControl
         _pressedItem = null;
     }
 
+    // ---------------------------------------------------------------- drag-select (rubber band)
+    // Hits are computed from the panel's regular layout (row height / tile grid), not from realized
+    // containers, so items scrolled out of view during the drag are selected too.
+
+    private bool _marquee, _marqueeMoved;
+    private Point _marqueeAnchor;                 // in content coordinates (scroll offset included)
+    private FileItem? _marqueeRowItem;            // details view: press started on this row's blank area
+    private HashSet<FileItem> _marqueeBase = new(); // selection kept from before the drag (Ctrl/Shift)
+    private readonly DispatcherTimer _marqueeScroll = new() { Interval = TimeSpan.FromMilliseconds(40) };
+
+    private bool IsDetails => _viewMode is ViewMode.Details or ViewMode.List;
+
+    private Panel? ItemsHost() => FindChild<Panel>(List, p => p.IsItemsHost);
+
+    private static T? FindChild<T>(DependencyObject root, Func<T, bool> match) where T : DependencyObject
+    {
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var c = VisualTreeHelper.GetChild(root, i);
+            if (c is T t && match(t)) return t;
+            if (FindChild(c, match) is { } found) return found;
+        }
+        return null;
+    }
+
+    private static double RowHeight(Panel panel) => panel.Children.OfType<ListViewItem>().FirstOrDefault()?.ActualHeight is > 0 and var h ? h : 28;
+
+    /// <summary>Scroll position in pixels. Details view scrolls by item, so its vertical offset is rows × row height.</summary>
+    private Vector ScrollOffset(Panel panel) => panel is IScrollInfo si
+        ? new Vector(si.HorizontalOffset, IsDetails ? si.VerticalOffset * RowHeight(panel) : si.VerticalOffset)
+        : default;
+
+    private bool StartMarquee(MouseButtonEventArgs e, FileItem? rowItem)
+    {
+        var panel = ItemsHost();
+        if (panel == null) return false;
+        _marqueeAnchor = e.GetPosition(panel) + ScrollOffset(panel);
+        _marqueeBase = Keyboard.Modifiers.HasFlag(ModifierKeys.Control) || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift)
+            ? new HashSet<FileItem>(List.SelectedItems.Cast<FileItem>()) : new();
+        _marqueeRowItem = rowItem;
+        _marquee = true; _marqueeMoved = false;
+        List.Focus();
+        List.CaptureMouse();
+        return true;
+    }
+
+    private void UpdateMarquee()
+    {
+        var panel = ItemsHost();
+        if (panel == null) { EndMarquee(); return; }
+        var off = ScrollOffset(panel);
+        var cur = Mouse.GetPosition(panel) + off;
+        if (!_marqueeMoved)
+        {
+            if (Math.Abs(cur.X - _marqueeAnchor.X) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(cur.Y - _marqueeAnchor.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+            _marqueeMoved = true;
+            if (_marqueeRowItem != null) List.UnselectAll();
+        }
+        var r = new Rect(_marqueeAnchor, cur);
+
+        // items under the rectangle, by layout position
+        var hits = new HashSet<FileItem>();
+        int n = List.Items.Count;
+        if (IsDetails)
+        {
+            double rh = RowHeight(panel);
+            int a = Math.Max(0, (int)Math.Floor(r.Top / rh)), b = Math.Min(n - 1, (int)Math.Floor(r.Bottom / rh));
+            for (int i = a; i <= b; i++) if (List.Items[i] is FileItem it) hits.Add(it);
+        }
+        else if (panel is VirtualizingWrapPanel wp && wp.ItemWidth > 0 && wp.ItemHeight > 0)
+        {
+            int cols = Math.Max(1, (int)(panel.ActualWidth / wp.ItemWidth));
+            int r0 = Math.Max(0, (int)Math.Floor(r.Top / wp.ItemHeight)), r1 = (int)Math.Floor(r.Bottom / wp.ItemHeight);
+            int c0 = Math.Max(0, (int)Math.Floor(r.Left / wp.ItemWidth)), c1 = Math.Min(cols - 1, (int)Math.Floor(r.Right / wp.ItemWidth));
+            for (int row = r0; row <= r1; row++)
+                for (int col = c0; col <= c1; col++)
+                {
+                    int i = row * cols + col;
+                    if (i < n && List.Items[i] is FileItem it) hits.Add(it);
+                }
+        }
+
+        // Ctrl toggles against the earlier selection, Shift adds to it, no modifier replaces it
+        var want = new HashSet<FileItem>(_marqueeBase);
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) want.SymmetricExceptWith(hits); else want.UnionWith(hits);
+        var sel = List.SelectedItems;
+        for (int i = sel.Count - 1; i >= 0; i--) if (!want.Contains((FileItem)sel[i]!)) sel.RemoveAt(i);
+        var have = new HashSet<FileItem>(sel.Cast<FileItem>());
+        foreach (var it in want) if (!have.Contains(it)) sel.Add(it);
+
+        // draw the rectangle (viewport coordinates, clipped to the item area)
+        var view = Rect.Intersect(new Rect(r.TopLeft - off, r.BottomRight - off), new Rect(0, 0, panel.ActualWidth, panel.ActualHeight));
+        if (view.IsEmpty) { MarqueeRect.Visibility = Visibility.Collapsed; return; }
+        var tl = panel.TranslatePoint(view.TopLeft, Overlay);
+        Canvas.SetLeft(MarqueeRect, tl.X); Canvas.SetTop(MarqueeRect, tl.Y);
+        MarqueeRect.Width = view.Width; MarqueeRect.Height = view.Height;
+        MarqueeRect.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>Scrolls while the pointer is held above or below the list during a drag-select.</summary>
+    private void MarqueeAutoScroll()
+    {
+        if (!_marquee || ItemsHost() is not { } panel || FindScrollViewer(List) is not { } sv) { _marqueeScroll.Stop(); return; }
+        double y = Mouse.GetPosition(panel).Y;
+        if (y < 0) sv.LineUp(); else if (y > panel.ActualHeight) sv.LineDown(); else { _marqueeScroll.Stop(); return; }
+        List.UpdateLayout();
+        UpdateMarquee();
+    }
+
+    private void EndMarquee()
+    {
+        if (!_marquee) return;
+        _marquee = false;
+        _marqueeScroll.Stop();
+        MarqueeRect.Visibility = Visibility.Collapsed;
+        if (List.IsMouseCaptured) List.ReleaseMouseCapture();
+    }
+
     private void List_MouseMove(object sender, MouseEventArgs e)
     {
+        if (_marquee)
+        {
+            if (e.LeftButton != MouseButtonState.Pressed) { EndMarquee(); return; }
+            UpdateMarquee();
+            if (ItemsHost() is { } host && (e.GetPosition(host).Y < 0 || e.GetPosition(host).Y > host.ActualHeight)) _marqueeScroll.Start();
+            return;
+        }
         if (e.LeftButton != MouseButtonState.Pressed || _pressedItem == null) return;
         var pos = e.GetPosition(List);
         if (Math.Abs(pos.X - _dragStart.X) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(pos.Y - _dragStart.Y) < SystemParameters.MinimumVerticalDragDistance) return;

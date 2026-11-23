@@ -22,6 +22,8 @@ public enum ThemeMode { System, Light, Dark }
 public enum ViewMode { Details, List, SmallIcons, MediumIcons, LargeIcons, ExtraLargeIcons }
 public enum ShellMenuMode { Inline, Submenu, Hidden }
 public enum StartMenuPosition { Left, Center }
+public enum StartMenuStyle { Tiles, List }
+public enum StartTileSize { Small, Medium, Large }
 
 public sealed class GeneralSettings : SettingsBase
 {
@@ -213,6 +215,20 @@ public sealed class StartMenuSettings : SettingsBase
     public bool ShowPowerButtons { get => _showPowerButtons; set => Set(ref _showPowerButtons, value); }
     public bool ShowUserName { get => _showUserName; set => Set(ref _showUserName, value); }
     public bool SearchContent { get => _searchContent; set => Set(ref _searchContent, value); }
+
+    // layout (defaults = the original look)
+    private StartMenuStyle _style = StartMenuStyle.Tiles;
+    private StartTileSize _tileSize = StartTileSize.Medium;
+    private bool _searchAtBottom, _showFolders = true;
+    private int _menuWidth = 640, _menuHeight = 700;
+    /// <summary>Tiles = icon grid with folder chips; List = two columns (pinned list, folders) like classic start menus.</summary>
+    public StartMenuStyle Style { get => _style; set => Set(ref _style, value); }
+    public StartTileSize TileSize { get => _tileSize; set => Set(ref _tileSize, value); }
+    public bool SearchAtBottom { get => _searchAtBottom; set => Set(ref _searchAtBottom, value); }
+    public bool ShowFolders { get => _showFolders; set => Set(ref _showFolders, value); }
+    public int MenuWidth { get => _menuWidth; set => Set(ref _menuWidth, Math.Clamp(value, 380, 1400)); }
+    public int MenuHeight { get => _menuHeight; set => Set(ref _menuHeight, Math.Clamp(value, 400, 1400)); }
+
     /// <summary>Which Windows known folders to show as shortcuts.</summary>
     public List<string> WindowsFolders { get; set; } = new() { "Desktop", "Documents", "Downloads", "Pictures", "Music", "Videos", "This PC" };
     public List<PinnedItem> Pinned { get; set; } = new()

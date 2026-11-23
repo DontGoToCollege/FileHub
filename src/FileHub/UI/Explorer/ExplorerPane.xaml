@@ -46,7 +46,9 @@
             </Border>
 
             <Grid Grid.Column="2">
-                <TextBox x:Name="SearchBox" TextChanged="SearchBox_TextChanged" KeyDown="SearchBox_KeyDown" Padding="30,5,28,5" ToolTip="Search this folder using the index. Syntax: ext:jpg size:>1mb dm:thisweek content:text regex:… (F1 for help)"/>
+                <TextBox x:Name="SearchBox" TextChanged="SearchBox_TextChanged" KeyDown="SearchBox_KeyDown" Padding="30,5,28,5" ToolTipService.Placement="Bottom" ToolTipService.InitialShowDelay="1200">
+                    <TextBox.ToolTip><TextBlock MaxWidth="340" TextWrapping="Wrap" Text="Search this folder using the index. Syntax: ext:jpg size:>1mb dm:thisweek content:text regex:… (F1 for help)"/></TextBox.ToolTip>
+                </TextBox>
                 <TextBlock Text="&#xE721;" FontFamily="{StaticResource IconFont}" FontSize="14" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="10,0,0,0" IsHitTestVisible="False"/>
                 <TextBlock x:Name="SearchHint" Text="Search" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="32,0,0,0" IsHitTestVisible="False"/>
                 <Button x:Name="ClearSearchBtn" Style="{StaticResource IconButton}" Content="&#xE711;" Width="26" Height="26" FontSize="11" HorizontalAlignment="Right" Margin="0,0,3,0" Visibility="Collapsed" Click="ClearSearch_Click"/>

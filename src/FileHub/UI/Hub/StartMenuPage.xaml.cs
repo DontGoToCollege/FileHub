@@ -21,7 +21,20 @@ public partial class StartMenuPage : UserControl, ISavablePage
         foreach (var f in FolderNames) FolderChecks.Children.Add(new CheckBox { Content = f, IsChecked = s.WindowsFolders.Contains(f), Margin = new Thickness(0, 0, 16, 4) });
         _pins = new ObservableCollection<PinnedItem>(s.Pinned);
         Grid.ItemsSource = _pins;
+        LoadLayout(s.Style.ToString(), s.TileSize.ToString(), s.SearchAtBottom, s.MenuWidth, s.MenuHeight, s.ShowFolders);
     }
+
+    private void LoadLayout(string style, string tileSize, bool searchAtBottom, int width, int height, bool showFolders)
+    {
+        Select(StyleCombo, style); Select(TileSizeCombo, tileSize); Select(SearchPosCombo, searchAtBottom ? "Bottom" : "Top");
+        MenuWidthBox.Text = width.ToString(); MenuHeightBox.Text = height.ToString();
+        ShowFoldersCheck.IsChecked = showFolders;
+    }
+
+    private static void Select(ComboBox combo, string tag) { foreach (ComboBoxItem ci in combo.Items) if ((string)ci.Tag == tag) combo.SelectedItem = ci; }
+    private static string? TagOf(ComboBox combo) => (combo.SelectedItem as ComboBoxItem)?.Tag as string;
+
+    private void ResetLayout_Click(object sender, RoutedEventArgs e) => LoadLayout("Tiles", "Medium", false, 640, 700, true);
 
     public void SavePage()
     {
@@ -33,6 +46,12 @@ public partial class StartMenuPage : UserControl, ISavablePage
         s.SearchContent = SearchContent.IsChecked == true; s.ShowPowerButtons = PowerButtons.IsChecked == true; s.ShowUserName = UserName.IsChecked == true;
         s.WindowsFolders = FolderChecks.Children.OfType<CheckBox>().Where(c => c.IsChecked == true).Select(c => (string)c.Content).ToList();
         s.Pinned = _pins.ToList();
+        if (Enum.TryParse<StartMenuStyle>(TagOf(StyleCombo), out var style)) s.Style = style;
+        if (Enum.TryParse<StartTileSize>(TagOf(TileSizeCombo), out var size)) s.TileSize = size;
+        s.SearchAtBottom = TagOf(SearchPosCombo) == "Bottom";
+        if (int.TryParse(MenuWidthBox.Text, out int w)) s.MenuWidth = w;
+        if (int.TryParse(MenuHeightBox.Text, out int h)) s.MenuHeight = h;
+        s.ShowFolders = ShowFoldersCheck.IsChecked == true;
         AppSettings.Current.Save();
         App.ApplySettings();
     }

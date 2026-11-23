@@ -49,6 +49,10 @@
             </ListView.View>
         </ListView>
 
+        <Canvas x:Name="Overlay" IsHitTestVisible="False" ClipToBounds="True">
+            <Rectangle x:Name="MarqueeRect" Visibility="Collapsed" Fill="{DynamicResource AccentBrush}" Stroke="{DynamicResource AccentBrush}" StrokeThickness="1" Opacity="0.35"/>
+        </Canvas>
+
         <TextBlock x:Name="EmptyText" Text="This folder is empty." Style="{StaticResource Secondary}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" IsHitTestVisible="False"/>
 
         <Popup x:Name="RenamePopup" StaysOpen="True" AllowsTransparency="True" Placement="Relative" PopupAnimation="None">

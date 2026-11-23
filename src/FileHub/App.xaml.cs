@@ -153,6 +153,26 @@ public partial class App : Application
         app._hub.Navigate(page ?? "search", query);
     }
 
+    // ------------------------------------------------------------------ start menu pins (shared by every context menu)
+
+    public static bool IsPinnedToStart(string path) => Settings.StartMenu.Pinned.Any(p => string.Equals(p.Path, path, StringComparison.OrdinalIgnoreCase));
+
+    public static void PinToStart(string path)
+    {
+        if (IsPinnedToStart(path)) return;
+        string label = Directory.Exists(path) ? Path.GetFileName(path.TrimEnd('\\')) : Path.GetFileNameWithoutExtension(path);
+        Settings.StartMenu.Pinned.Add(new PinnedItem { Label = label.Length > 0 ? label : path, Path = path });
+        Settings.Save();
+        Instance._start?.BuildPinned();
+    }
+
+    public static void UnpinFromStart(string path)
+    {
+        if (Settings.StartMenu.Pinned.RemoveAll(p => string.Equals(p.Path, path, StringComparison.OrdinalIgnoreCase)) == 0) return;
+        Settings.Save();
+        Instance._start?.BuildPinned();
+    }
+
     public static void ToggleStartMenu()
     {
         var app = Instance;

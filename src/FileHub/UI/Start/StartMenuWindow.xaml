@@ -4,17 +4,33 @@
         Title="Start" Width="640" Height="700"
         WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False" Topmost="True" AllowsTransparency="True" Background="Transparent"
         FontFamily="{StaticResource UIFont}" FontSize="13" Foreground="{DynamicResource TextBrush}" ShowActivated="True" UseLayoutRounding="True">
+    <Window.Resources>
+        <!-- one row of the List style (pinned items and folders) -->
+        <DataTemplate x:Key="ListRow">
+            <Button Style="{StaticResource CommandButton}" Height="38" Padding="8,0" Margin="0,0,0,2" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                    Click="Pinned_Click" MouseRightButtonUp="Tile_RightClick" PreviewMouseLeftButtonDown="Tile_MouseDown" PreviewMouseMove="Tile_MouseMove" AllowDrop="True" Drop="Tile_Drop" Tag="{Binding}" ToolTip="{Binding Path}">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                    <Grid Width="24" Height="24" Margin="0,0,12,0">
+                        <Image Source="{Binding Icon}" Width="24" Height="24" RenderOptions.BitmapScalingMode="HighQuality" Visibility="{Binding Glyph, Converter={StaticResource NullToVisInv}}"/>
+                        <TextBlock Text="{Binding Glyph}" Style="{StaticResource Glyph}" FontSize="18" Foreground="{DynamicResource AccentBrush}" Visibility="{Binding Glyph, Converter={StaticResource NullToVis}}"/>
+                    </Grid>
+                    <TextBlock Text="{Binding Label}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+            </Button>
+        </DataTemplate>
+    </Window.Resources>
     <Border Background="{DynamicResource StartMenuBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Margin="8">
         <Border.Effect><DropShadowEffect BlurRadius="16" ShadowDepth="2" Opacity="0.3"/></Border.Effect>
         <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>  <!-- search (top) -->
+                <RowDefinition Height="*"/>     <!-- body -->
+                <RowDefinition Height="Auto"/>  <!-- search (bottom) -->
+                <RowDefinition Height="Auto"/>  <!-- footer -->
             </Grid.RowDefinitions>
 
-            <!-- search -->
-            <Grid Margin="28,24,28,8">
+            <!-- search (row set in code: top or bottom) -->
+            <Grid x:Name="SearchArea" Margin="28,24,28,8">
                 <TextBox x:Name="SearchBox" FontSize="14" MinHeight="40" Padding="40,6,12,6" TextChanged="SearchBox_TextChanged" KeyDown="SearchBox_KeyDown"/>
                 <TextBlock Text="&#xE721;" FontFamily="{StaticResource IconFont}" FontSize="16" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="14,0,0,0" IsHitTestVisible="False"/>
                 <TextBlock x:Name="Hint" Text="Search apps, files, folders and contents" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="42,0,0,0" IsHitTestVisible="False" FontSize="14"/>
@@ -22,7 +38,7 @@
 
             <!-- body -->
             <Grid Grid.Row="1" Margin="28,8,28,8">
-                <!-- pinned + folders -->
+                <!-- Tiles style: pinned grid + folder chips -->
                 <ScrollViewer x:Name="PinnedView" VerticalScrollBarVisibility="Auto">
                     <StackPanel>
                         <TextBlock Text="Pinned" FontWeight="SemiBold" Margin="4,4,0,8"/>
@@ -30,11 +46,12 @@
                             <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Button Style="{StaticResource CommandButton}" Width="96" Height="84" Padding="4" Click="Pinned_Click" Tag="{Binding}" ToolTip="{Binding Path}">
+                                    <Button Style="{StaticResource CommandButton}" Width="{Binding TileWidth}" Height="{Binding TileHeight}" Padding="4"
+                                            Click="Pinned_Click" MouseRightButtonUp="Tile_RightClick" PreviewMouseLeftButtonDown="Tile_MouseDown" PreviewMouseMove="Tile_MouseMove" AllowDrop="True" Drop="Tile_Drop" Tag="{Binding}" ToolTip="{Binding Path}">
                                         <StackPanel>
-                                            <Grid Width="32" Height="32" Margin="0,4,0,6">
-                                                <Image Source="{Binding Icon}" Width="32" Height="32" RenderOptions.BitmapScalingMode="HighQuality" Visibility="{Binding Glyph, Converter={StaticResource NullToVisInv}}"/>
-                                                <TextBlock Text="{Binding Glyph}" Style="{StaticResource Glyph}" FontSize="26" Foreground="{DynamicResource AccentBrush}" Visibility="{Binding Glyph, Converter={StaticResource NullToVis}}"/>
+                                            <Grid Width="{Binding IconSize}" Height="{Binding IconSize}" Margin="0,4,0,6">
+                                                <Image Source="{Binding Icon}" Width="{Binding IconSize}" Height="{Binding IconSize}" RenderOptions.BitmapScalingMode="HighQuality" Visibility="{Binding Glyph, Converter={StaticResource NullToVisInv}}"/>
+                                                <TextBlock Text="{Binding Glyph}" Style="{StaticResource Glyph}" FontSize="{Binding GlyphSize}" Foreground="{DynamicResource AccentBrush}" Visibility="{Binding Glyph, Converter={StaticResource NullToVis}}"/>
                                             </Grid>
                                             <TextBlock Text="{Binding Label}" TextAlignment="Center" TextTrimming="CharacterEllipsis" TextWrapping="Wrap" MaxHeight="34" FontSize="12"/>
                                         </StackPanel>
@@ -42,12 +59,12 @@
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <TextBlock Text="Folders" FontWeight="SemiBold" Margin="4,16,0,8"/>
+                        <TextBlock x:Name="FoldersHeader" Text="Folders" FontWeight="SemiBold" Margin="4,16,0,8"/>
                         <ItemsControl x:Name="FolderItems">
                             <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Button Style="{StaticResource CommandButton}" Height="40" Padding="10,0" Margin="0,0,6,6" Click="Pinned_Click" Tag="{Binding}">
+                                    <Button Style="{StaticResource CommandButton}" Height="40" Padding="10,0" Margin="0,0,6,6" Click="Pinned_Click" MouseRightButtonUp="Folder_RightClick" Tag="{Binding}">
                                         <StackPanel Orientation="Horizontal">
                                             <Image Source="{Binding Icon}" Width="20" Height="20" Margin="0,0,8,0" Visibility="{Binding Glyph, Converter={StaticResource NullToVisInv}}"/>
                                             <TextBlock Text="{Binding Glyph}" Style="{StaticResource Glyph}" Margin="0,0,8,0" Foreground="{DynamicResource AccentBrush}" Visibility="{Binding Glyph, Converter={StaticResource NullToVis}}"/>
@@ -60,11 +77,42 @@
                     </StackPanel>
                 </ScrollViewer>
 
+                <!-- List style: pinned list on the left, folders on the right -->
+                <Grid x:Name="ListStyleView" Visibility="Collapsed">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition x:Name="ListFoldersColumn" Width="210"/></Grid.ColumnDefinitions>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,0,12,0">
+                        <StackPanel>
+                            <TextBlock Text="Pinned" FontWeight="SemiBold" Margin="8,4,0,8"/>
+                            <ItemsControl x:Name="ListPinnedItems" ItemTemplate="{StaticResource ListRow}"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                    <Border x:Name="ListFoldersPane" Grid.Column="1" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1,0,0,0" Padding="12,0,0,0">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <TextBlock Text="Folders" FontWeight="SemiBold" Margin="8,4,0,8"/>
+                                <ItemsControl x:Name="ListFolderItems">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Button Style="{StaticResource CommandButton}" Height="36" Padding="8,0" Margin="0,0,0,2" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="Pinned_Click" MouseRightButtonUp="Folder_RightClick" Tag="{Binding}">
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                                                    <Image Source="{Binding Icon}" Width="20" Height="20" Margin="0,0,10,0" Visibility="{Binding Glyph, Converter={StaticResource NullToVisInv}}"/>
+                                                    <TextBlock Text="{Binding Glyph}" Style="{StaticResource Glyph}" Margin="0,0,10,0" Foreground="{DynamicResource AccentBrush}" Visibility="{Binding Glyph, Converter={StaticResource NullToVis}}"/>
+                                                    <TextBlock Text="{Binding Label}" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+
                 <!-- results -->
                 <Grid x:Name="ResultsView" Visibility="Collapsed">
                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                     <TextBlock x:Name="ResultsHeader" Text="Best matches" FontWeight="SemiBold" Margin="4,4,0,8"/>
-                    <ListBox x:Name="ResultsList" Grid.Row="1" MouseDoubleClick="Results_DoubleClick" KeyDown="Results_KeyDown" MouseRightButtonUp="Results_RightClick" HorizontalContentAlignment="Stretch">
+                    <ListBox x:Name="ResultsList" Grid.Row="1" ScrollViewer.HorizontalScrollBarVisibility="Disabled" MouseDoubleClick="Results_DoubleClick" KeyDown="Results_KeyDown" MouseRightButtonUp="Results_RightClick" HorizontalContentAlignment="Stretch">
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem">
                                 <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
@@ -101,7 +149,7 @@
             </Grid>
 
             <!-- footer -->
-            <Border Grid.Row="2" Background="{DynamicResource ControlBackgroundBrush}" CornerRadius="0,0,8,8" Padding="28,10">
+            <Border Grid.Row="3" Background="{DynamicResource ControlBackgroundBrush}" CornerRadius="0,0,8,8" Padding="28,10">
                 <Grid>
                     <Button Style="{StaticResource CommandButton}" Click="User_Click" HorizontalAlignment="Left" Padding="6,0">
                         <StackPanel Orientation="Horizontal">

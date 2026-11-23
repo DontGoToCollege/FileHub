@@ -28,6 +28,31 @@
 
             <Border Style="{StaticResource Card}">
                 <StackPanel>
+                    <TextBlock Text="Layout" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Style" VerticalAlignment="Center" Width="90"/>
+                        <ComboBox x:Name="StyleCombo" Width="260"><ComboBoxItem Content="Tiles (icon grid + folder chips)" Tag="Tiles"/><ComboBoxItem Content="List (two columns, classic)" Tag="List"/></ComboBox>
+                        <TextBlock Text="Tile size" VerticalAlignment="Center" Margin="24,0,8,0"/>
+                        <ComboBox x:Name="TileSizeCombo" Width="110"><ComboBoxItem Content="Small" Tag="Small"/><ComboBoxItem Content="Medium" Tag="Medium"/><ComboBoxItem Content="Large" Tag="Large"/></ComboBox>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <TextBlock Text="Search box" VerticalAlignment="Center" Width="90"/>
+                        <ComboBox x:Name="SearchPosCombo" Width="260"><ComboBoxItem Content="At the top" Tag="Top"/><ComboBoxItem Content="At the bottom (above user and power)" Tag="Bottom"/></ComboBox>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <TextBlock Text="Size" VerticalAlignment="Center" Width="90"/>
+                        <TextBox x:Name="MenuWidthBox" Width="60" MinHeight="26" Padding="4,2"/>
+                        <TextBlock Text="×" VerticalAlignment="Center" Margin="6,0"/>
+                        <TextBox x:Name="MenuHeightBox" Width="60" MinHeight="26" Padding="4,2"/>
+                        <TextBlock Style="{StaticResource Caption}" Text="width × height (default 640 × 700)" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                    </StackPanel>
+                    <CheckBox x:Name="ShowFoldersCheck" Content="Show the Windows folders section" Margin="0,10,0,0"/>
+                    <TextBlock Style="{StaticResource Caption}" TextWrapping="Wrap" Margin="0,8,0,0" Text="Pin anything from its right-click menu (Pin to Start) in Explorer, the Hub or Start search results. In the start menu, right-click a tile to unpin or move it, or drag tiles to reorder them."/>
+                    <Button Content="Reset layout to defaults" Click="ResetLayout_Click" HorizontalAlignment="Left" Margin="0,10,0,0"/>
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
                     <TextBlock Text="Windows folders to show" Style="{StaticResource SectionHeader}" Margin="0,0,0,8"/>
                     <WrapPanel x:Name="FolderChecks"/>
                 </StackPanel>
