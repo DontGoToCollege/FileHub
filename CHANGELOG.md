@@ -2,6 +2,15 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.37
+
+### Changed
+- **The thumbnail status says where it is and why it waits.** While working it names the drive and its kind
+  ("Thumbnails 1,200 / 272,588 (G: NVMe)"). While hard-drive thumbnails wait for content indexing (both read every file,
+  so they don't run on a hard drive at once) it names those drives and how far content indexing has got
+  ("hard drives E:, F: wait for content indexing (3,400 / 52,000)"). The log's "Thumbnails: making" line splits the
+  count by drive.
+
 ## 0.3.36
 
 ### Added

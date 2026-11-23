@@ -119,7 +119,9 @@ public sealed class ThumbIndexer : IDisposable
         if (pruned > 0) Log.Info($"Thumbnails: dropped {pruned:N0} of files that are gone");
         todo.Sort((a, b) => a.drive != b.drive ? a.drive.CompareTo(b.drive) : string.Compare(a.path, b.path, StringComparison.OrdinalIgnoreCase));
         Candidates = todo.Count; Processed = 0;
-        if (todo.Count > 0) Log.Info($"Thumbnails: making {todo.Count:N0}");
+        if (todo.Count > 0)
+            Log.Info($"Thumbnails: making {todo.Count:N0} ({string.Join(", ", todo.GroupBy(t => Where(t.path)).Select(g => $"{g.Key} {g.Count():N0}"))})");
+        string hardDrives = string.Join(", ", todo.Where(t => ContentIndexer.DriveOf(t.path).oneAtATime).Select(t => Letter(t.path)).Distinct());
         const int chunk = 200;
         for (int from = 0; from < todo.Count; from += chunk)
         {
@@ -128,17 +130,23 @@ public sealed class ThumbIndexer : IDisposable
             // one (done thumbnails are kept)
             var files = todo.GetRange(from, Math.Min(chunk, todo.Count - from));
             while (_content.IsRunning && files.Any(f => ContentIndexer.DriveOf(f.path).oneAtATime) && !_paused && !_fullPassRequested && !ct.IsCancellationRequested)
-            { Status($"Thumbnails {Processed:N0} / {Candidates:N0} (hard drives wait for content indexing)"); Thread.Sleep(2000); }
+            { Status($"Thumbnails {Processed:N0} / {Candidates:N0}: hard drives {hardDrives} wait for content indexing ({_content.Processed:N0} / {_content.Candidates:N0})"); Thread.Sleep(2000); }
             if (_paused || _fullPassRequested) break;
             ct.ThrowIfCancellationRequested();
             DrainChanged(ct);
-            Status($"Thumbnails {Processed:N0} / {Candidates:N0}");
+            Status($"Thumbnails {Processed:N0} / {Candidates:N0} ({Where(files[0].path)})");
             _db.Put(Make(files.Select(t => (t.path, t.modified)).ToList(), ct));
             Processed = Math.Min(todo.Count, from + chunk);
         }
         if (_fullPassRequested && !_paused) return;   // cut short for a new pass, which sets its own status: not up to date yet
         Status(_paused ? $"Thumbnails paused at {Processed:N0} / {Candidates:N0}" : $"Thumbnails up to date ({_db.Count():N0})");
     }
+
+    private static string Letter(string path) => path.Length > 1 && path[1] == ':' ? char.ToUpperInvariant(path[0]) + ":" : "network";
+
+    /// <summary>Drive and kind for status lines: "G: NVMe", "E: hard drive".</summary>
+    private static string Where(string path) => Letter(path) is "network" ? "network" :
+        Letter(path) + " " + ContentIndexer.DriveOf(path).rank switch { 0 => "NVMe", 1 => "SSD", 2 => "removable", _ => "hard drive" };
 
     /// <summary>
     /// Makes the thumbnails on STA threads (the shell's thumbnailers want one): SSD files on several at once, each hard
