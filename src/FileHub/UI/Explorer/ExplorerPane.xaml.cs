@@ -8,6 +8,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using FileHub.Core.Indexing;
+using FileHub.Core.Search;
 using FileHub.Core.Settings;
 using FileHub.Core.Shell;
 using FileHub.UI.Common;
@@ -259,16 +260,43 @@ public partial class ExplorerPane : UserControl
     private void Sort_Click(object sender, RoutedEventArgs e)
     {
         var menu = new ContextMenu();
-        foreach (var (label, key) in ContextMenuBuilder.ShownSortKeys(Tab.SortChoices))
-        {
-            var mi = new MenuItem { Header = label, IsChecked = Tab.SortBy == key }; var k = key; mi.Click += (_, _) => PickSort(k); menu.Items.Add(mi);
-        }
-        menu.Items.Add(new Separator());
-        var asc = new MenuItem { Header = "Ascending", IsChecked = !Tab.SortDescending }; asc.Click += (_, _) => Tab.SetSort(Tab.SortBy, false); menu.Items.Add(asc);
-        var desc = new MenuItem { Header = "Descending", IsChecked = Tab.SortDescending }; desc.Click += (_, _) => Tab.SetSort(Tab.SortBy, true); menu.Items.Add(desc);
-        menu.Items.Add(new Separator());
-        menu.Items.Add(ContextMenuBuilder.SortOptionsMenu(Execute, Tab.SortChoices));
+        ContextMenuBuilder.FillSortMenu(menu, Execute, Tab.SortChoices, Tab.SortBy, Tab.SortDescending);
         OpenFlyout(menu, (FrameworkElement)sender);
+    }
+
+    /// <summary>Sort by → More… / Sort options → Choose sorts and hotkeys…: the large list, like Explorer's Choose Details.</summary>
+    private void OpenSortWindow()
+    {
+        var ex = AppSettings.Current.Explorer;
+        List<EditRow> Rows(IReadOnlyCollection<string> choices, IReadOnlyDictionary<string, string> keys)
+        {
+            string Key(string k) => keys.TryGetValue(k, out var g) ? g : "";
+            var shown = choices.Where(SortFields.IsKnown).ToList();
+            var rows = shown.Select(k => new EditRow { Id = k, Label = SortFields.Label(k), Hotkey = Key(k) })
+                .Concat(SortFields.All.Where(f => !shown.Contains(f.Key, StringComparer.OrdinalIgnoreCase)).Select(f => new EditRow { Id = f.Key, Label = f.Label, Shown = false, Hotkey = Key(f.Key) }))
+                .ToList();
+            foreach (var d in new[] { "Ascending", "Descending" })
+                rows.Add(new EditRow { Id = d, Label = d + " (order)", CanHide = false, Movable = false, Hotkey = Key(d) });
+            return rows;
+        }
+        var win = new ListEditorWindow("Sort options",
+            "Tick the sorts to show in Sort by and put them in order. Set a hotkey by clicking its box and pressing the keys "
+            + "(pressing a sort's hotkey again flips the order). " + (ex.SortAllFolders ? "The list applies to all folders." : "The list applies to this folder; hotkeys work everywhere."),
+            Array.Empty<(string, string)>(), null,
+            _ => Rows(Tab.SortChoices, ex.SortHotkeys), _ => Rows(SortFields.DefaultChoices(), SortFields.DefaultHotkeys()), hotkeys: true)
+        {
+            Owner = Window.GetWindow(this),
+            Validate = rows =>
+            {
+                if (!rows.Any(r => r.CanHide && r.Shown)) return "Tick at least one sort to show.";
+                var dup = rows.Where(r => !string.IsNullOrEmpty(r.Hotkey)).GroupBy(r => r.Hotkey!, StringComparer.OrdinalIgnoreCase).FirstOrDefault(g => g.Count() > 1);
+                return dup == null ? null : $"{dup.Key} is used by both {string.Join(" and ", dup.Select(r => r.Label))}.";
+            },
+        };
+        if (win.ShowDialog() != true) return;
+        ex.SortHotkeys = win.Rows.Where(r => !string.IsNullOrEmpty(r.Hotkey)).ToDictionary(r => r.Id, r => r.Hotkey!);
+        AppSettings.Current.Save();
+        Tab.SetSortChoices(win.Rows.Where(r => r.CanHide && r.Shown).Select(r => r.Id).ToList());
     }
 
     /// <summary>
@@ -464,7 +492,7 @@ public partial class ExplorerPane : UserControl
     private void OnContextMenu(IReadOnlyList<FileItem> items, bool background)
     {
         var sel = background ? Array.Empty<FileItem>() : items;
-        var menu = ContextMenuBuilder.Build(this, sel, Tab.IsVirtual ? null : Tab.Path, cmd => ExecuteFor(cmd, sel), Tab.SortChoices);
+        var menu = ContextMenuBuilder.Build(this, sel, Tab.IsVirtual ? null : Tab.Path, cmd => ExecuteFor(cmd, sel), Tab.SortChoices, Tab.SortBy, Tab.SortDescending);
         menu.PlacementTarget = FileList; menu.Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint; menu.IsOpen = true;
     }
 
@@ -542,7 +570,7 @@ public partial class ExplorerPane : UserControl
                 else if (cmd == "sortdir:desc") Tab.SetSort(Tab.SortBy, true);
                 else if (cmd == "sortscope:folder" || cmd == "sortscope:all") SetSortScope(cmd == "sortscope:all");
                 else if (cmd == "sortreset") Tab.ResetSort();
-                else if (cmd.StartsWith("sortchoice:")) Tab.ToggleSortChoice(cmd[11..]);
+                else if (cmd == "sortwindow") OpenSortWindow();
                 break;
         }
     }

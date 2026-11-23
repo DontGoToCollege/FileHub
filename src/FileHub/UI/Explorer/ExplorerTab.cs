@@ -300,8 +300,12 @@ public sealed class ExplorerTab : ObservableObject
         // "Date" like Explorer's: when a photo was taken, otherwise when the item was last modified
         var taken = sortBy == "Date" ? App.Db.GetDatesTaken(items.Where(i => !i.IsDirectory && !i.IsVirtual).Select(i => i.FullPath).ToList()) : null;
         DateTime DateOf(FileItem i) => taken != null && taken.TryGetValue(i.FullPath, out var d) ? d : i.ModifiedUtc;
+        // file details ("prop:Artist"…) come from the metadata index; files without one sort as empty
+        var props = sortBy.StartsWith("prop:") ? App.Db.GetPropValues(items.Where(i => !i.IsDirectory && !i.IsVirtual).Select(i => i.FullPath).ToList(), sortBy[5..]) : null;
+        string PropOf(FileItem i) => props != null && props.TryGetValue(i.FullPath, out var v) ? v.Trim('‪', '‬', ' ') : "";
         Comparison<FileItem> cmp = sortBy switch
         {
+            _ when props != null => (a, b) => SearchEngine.CompareNames(PropOf(a), PropOf(b)),
             "Date" => (a, b) => DateOf(a).CompareTo(DateOf(b)),
             "Modified" => (a, b) => a.ModifiedUtc.CompareTo(b.ModifiedUtc),
             "Created" => (a, b) => a.CreatedUtc.CompareTo(b.CreatedUtc),
@@ -342,13 +346,10 @@ public sealed class ExplorerTab : ObservableObject
     public IReadOnlyCollection<string> SortChoices
         => AppSettings.Current.Explorer.SortAllFolders || _sortChoices == null ? AppSettings.Current.Explorer.SortChoices : _sortChoices;
 
-    /// <summary>Shows or hides one sort in Sort by (never the last one), for this folder or, with one sort for all folders, everywhere.</summary>
-    public void ToggleSortChoice(string key)
+    /// <summary>Sets which sorts Sort by shows, in order, for this folder or, with one sort for all folders, everywhere.</summary>
+    public void SetSortChoices(List<string> list)
     {
-        var set = new HashSet<string>(SortChoices, StringComparer.OrdinalIgnoreCase);
-        if (!set.Remove(key)) set.Add(key);
-        if (set.Count == 0) return;
-        var list = ContextMenuBuilder.SortKeys.Select(k => k.Key).Where(set.Contains).ToList();
+        if (list.Count == 0) return;
         var ex = AppSettings.Current.Explorer;
         if (ex.SortAllFolders) { ex.SortChoices = list; AppSettings.Current.Save(); }
         else { _sortChoices = list; PersistView(); }

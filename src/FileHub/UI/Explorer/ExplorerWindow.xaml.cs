@@ -90,12 +90,27 @@ public partial class ExplorerWindow : Window
 
     private void NewTab_Click(object sender, RoutedEventArgs e) => OpenTab(_active?.Tab.Path);
 
+    /// <summary>The owner's sort hotkeys (Sort options): "sort:&lt;key&gt;" or "sortdir:asc/desc", or null.</summary>
+    private static string? SortHotkeyCommand(Key key)
+    {
+        if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin) return null;
+        // in a text box, Ctrl+Alt is AltGr (typing characters) and plain keys are typing
+        var mods = Keyboard.Modifiers;
+        if (Keyboard.FocusedElement is System.Windows.Controls.Primitives.TextBoxBase && (mods == ModifierKeys.None || mods.HasFlag(ModifierKeys.Control | ModifierKeys.Alt) || mods == ModifierKeys.Shift)) return null;
+        string g = ListEditorWindow.FormatGesture(mods, key);
+        foreach (var (k, v) in AppSettings.Current.Explorer.SortHotkeys)
+            if (string.Equals(v, g, StringComparison.OrdinalIgnoreCase))
+                return k == "Ascending" ? "sortdir:asc" : k == "Descending" ? "sortdir:desc" : "sort:" + k;
+        return null;
+    }
+
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
         bool ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control), shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift), alt = Keyboard.Modifiers.HasFlag(ModifierKeys.Alt);
         var key = e.Key == Key.System ? e.SystemKey : e.Key;   // with Alt held WPF reports Key.System
         var pane = _active?.Pane;
-        if (ctrl && key == Key.T) { OpenTab(_active?.Tab.Path); e.Handled = true; }
+        if (pane != null && SortHotkeyCommand(key) is { } sortCmd) { pane.Execute(sortCmd); e.Handled = true; }
+        else if (ctrl && key == Key.T) { OpenTab(_active?.Tab.Path); e.Handled = true; }
         else if (ctrl && key == Key.W) { if (_active != null) CloseTab(_active); e.Handled = true; }
         else if (ctrl && key == Key.Tab)
         {

@@ -243,6 +243,9 @@ public sealed class IndexService : IDisposable
             case FsChangeKind.Deleted:
             {
                 int id = index.FindByPath(c.Path);
+                // a drive root can't be deleted: such an event is bogus, and removing the root would empty the whole index
+                if (id >= 0 && index[id].Parent < 0) { Log.Warn("Ignored a delete event for drive root " + c.Path); break; }
+                if (id >= 0 && index[id].IsDirectory) Log.Info("Folder removed from index: " + c.Path);
                 if (id >= 0) index.Remove(id);
                 FileChanged?.Invoke(c.Path, false);
                 break;
@@ -270,6 +273,10 @@ public sealed class IndexService : IDisposable
             case FsChangeKind.Renamed:
             {
                 int id = c.OldPath != null ? index.FindByPath(c.OldPath) : -1;
+                // the watcher reports the watched root as the old path when it lost the old name; treat it as a new item,
+                // never as "the drive moved" (removing the root would empty the whole index)
+                if (id >= 0 && index[id].Parent < 0) { Log.Warn($"Rename event with drive root as old path ({c.OldPath} -> {c.Path}); treated as new"); id = -1; }
+                if (id >= 0 && index[id].IsDirectory) Log.Info($"Folder renamed in index: {c.OldPath} -> {c.Path}");
                 string newName = Path.GetFileName(c.Path);
                 if (id >= 0)
                 {

@@ -204,6 +204,19 @@ public sealed class MetaDb : IDisposable
     public Dictionary<string, DateTime> GetDatesTaken(IReadOnlyList<string> paths)
     {
         var result = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        // stored as the shell formats a FILETIME: "2018/09/25:22:32:40.000" (UTC)
+        foreach (var (path, text) in GetPropValues(paths, "DateTaken"))
+            if (DateTime.TryParseExact(text, "yyyy/MM/dd:HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var d))
+                result[path] = d;
+        return result;
+    }
+
+    /// <summary>One indexed file detail (e.g. "Artist", "Duration") for those of the paths that have it.</summary>
+    public Dictionary<string, string> GetPropValues(IReadOnlyList<string> paths, string name)
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (!System.Text.RegularExpressions.Regex.IsMatch(name, "^[A-Za-z]+$")) return result;
         try
         {
             using var c = Open();
@@ -211,17 +224,15 @@ public sealed class MetaDb : IDisposable
             {
                 var chunk = paths.Skip(i).Take(500).ToList();
                 using var cmd = c.CreateCommand();
-                cmd.CommandText = "SELECT path, json_extract(json, '$.DateTaken') FROM props WHERE path IN (" + string.Join(",", chunk.Select((_, k) => "$p" + k)) + ") AND instr(json, 'DateTaken') > 0";
+                cmd.CommandText = "SELECT path, json_extract(json, $jp) FROM props WHERE path IN (" + string.Join(",", chunk.Select((_, k) => "$p" + k)) + ") AND instr(json, $n) > 0";
+                cmd.Parameters.AddWithValue("$jp", "$." + name);
+                cmd.Parameters.AddWithValue("$n", "\"" + name + "\"");
                 for (int k = 0; k < chunk.Count; k++) cmd.Parameters.AddWithValue("$p" + k, chunk[k]);
                 using var r = cmd.ExecuteReader();
-                // stored as the shell formats a FILETIME: "2018/09/25:22:32:40.000" (UTC)
-                while (r.Read())
-                    if (!r.IsDBNull(1) && DateTime.TryParseExact(r.GetString(1), "yyyy/MM/dd:HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture,
-                            System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var d))
-                        result[r.GetString(0)] = d;
+                while (r.Read()) if (!r.IsDBNull(1)) result[r.GetString(0)] = Convert.ToString(r.GetValue(1)) ?? "";
             }
         }
-        catch (Exception ex) { Log.Warn("Date taken lookup failed: " + ex.Message); }
+        catch (Exception ex) { Log.Warn($"{name} lookup failed: " + ex.Message); }
         return result;
     }
 

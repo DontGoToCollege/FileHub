@@ -20,13 +20,31 @@ public static class ContextMenuBuilder
     private static readonly HashSet<string> DedupeLabels = new(StringComparer.OrdinalIgnoreCase)
     { "Open", "Cut", "Copy", "Paste", "Delete", "Rename", "Properties", "Refresh", "View", "Sort by", "Group by", "Paste shortcut", "Undo", "Open in new tab", "Open in new window", "Open in Terminal", "Copy as path" };
 
-    /// <summary>Every sort the Sort by menus can offer, in menu order; which ones show is the owner's choice (Sort options).</summary>
-    public static readonly (string Label, string Key)[] SortKeys =
-        { ("Name", "Name"), ("Date", "Date"), ("Date modified", "Modified"), ("Date created", "Created"), ("Type", "Type"), ("Size", "Size"), ("Extension", "Extension") };
-
-    /// <summary>The Sort by entries to show for this list of chosen keys (unknown keys ignored, menu order kept).</summary>
+    /// <summary>The Sort by entries to show, in the owner's order (unknown keys ignored).</summary>
     public static IEnumerable<(string Label, string Key)> ShownSortKeys(IReadOnlyCollection<string> choices)
-        => SortKeys.Where(k => choices.Contains(k.Key, StringComparer.OrdinalIgnoreCase));
+        => choices.Where(SortFields.IsKnown).Select(k => (SortFields.Label(k), k));
+
+    /// <summary>The hotkey shown beside a sort (or "Ascending"/"Descending") in the menus.</summary>
+    public static string? SortHotkey(string key) => AppSettings.Current.Explorer.SortHotkeys.TryGetValue(key, out var g) && g.Length > 0 ? g : null;
+
+    /// <summary>Fills a Sort by menu: the chosen sorts and the order, with the current ones ticked like Explorer, then More… and Sort options.</summary>
+    public static void FillSortMenu(ItemsControl sort, Action<string> command, IReadOnlyCollection<string> choices, string? sortBy, bool sortDesc)
+    {
+        foreach (var (label, key) in ShownSortKeys(choices))
+        {
+            var mi = new MenuItem { Header = label, InputGestureText = SortHotkey(key), IsChecked = string.Equals(key, sortBy, StringComparison.OrdinalIgnoreCase) };
+            var k = key; mi.Click += (_, _) => command("sort:" + k); sort.Items.Add(mi);
+        }
+        sort.Items.Add(new Separator());
+        foreach (var (l, c, desc) in new[] { ("Ascending", "sortdir:asc", false), ("Descending", "sortdir:desc", true) })
+        {
+            var mi = new MenuItem { Header = l, InputGestureText = SortHotkey(l), IsChecked = sortBy != null && sortDesc == desc };
+            mi.Click += (_, _) => command(c); sort.Items.Add(mi);
+        }
+        sort.Items.Add(new Separator());
+        var more = new MenuItem { Header = "More…" }; more.Click += (_, _) => command("sortwindow"); sort.Items.Add(more);
+        sort.Items.Add(SortOptionsMenu(command));
+    }
 
     /// <summary>The Explorer view hotkeys (Ctrl+Shift+1…6), in View menu order.</summary>
     public static readonly (string Label, ViewMode Mode, string Gesture)[] ViewModes =
@@ -36,20 +54,12 @@ public static class ContextMenuBuilder
         ("List", ViewMode.List, "Ctrl+Shift+5"), ("Details", ViewMode.Details, "Ctrl+Shift+6"),
     };
 
-    /// <summary>"Sort options" submenu: which sorts Sort by shows, and whether sort changes stick to this folder or apply to all folders.</summary>
-    public static MenuItem SortOptionsMenu(Action<string> command, IReadOnlyCollection<string> choices)
+    /// <summary>"Sort options" submenu: the sorts-and-hotkeys window, and whether sort changes stick to this folder or apply to all folders.</summary>
+    public static MenuItem SortOptionsMenu(Action<string> command)
     {
         bool all = AppSettings.Current.Explorer.SortAllFolders;
         var opts = new MenuItem { Header = "Sort options" };
-        var shown = new MenuItem { Header = all ? "Show in Sort by (all folders)" : "Show in Sort by (this folder)" };
-        foreach (var (label, key) in SortKeys)
-        {
-            // stays open so several can be ticked in one go
-            var mi = new MenuItem { Header = label, IsCheckable = true, StaysOpenOnClick = true, IsChecked = choices.Contains(key, StringComparer.OrdinalIgnoreCase) };
-            var k = key; mi.Click += (_, _) => command("sortchoice:" + k);
-            shown.Items.Add(mi);
-        }
-        opts.Items.Add(shown);
+        var custom = new MenuItem { Header = "Choose sorts and hotkeys…" }; custom.Click += (_, _) => command("sortwindow"); opts.Items.Add(custom);
         opts.Items.Add(new Separator());
         var folder = new MenuItem { Header = "Remember sort for each folder", IsChecked = !all }; folder.Click += (_, _) => command("sortscope:folder"); opts.Items.Add(folder);
         var every = new MenuItem { Header = "Use the same sort for all folders", IsChecked = all }; every.Click += (_, _) => command("sortscope:all"); opts.Items.Add(every);
@@ -58,7 +68,8 @@ public static class ContextMenuBuilder
         return opts;
     }
 
-    public static ContextMenu Build(FrameworkElement owner, IReadOnlyList<FileItem> items, string? folder, Action<string> command, IReadOnlyCollection<string>? sortChoices = null)
+    public static ContextMenu Build(FrameworkElement owner, IReadOnlyList<FileItem> items, string? folder, Action<string> command,
+        IReadOnlyCollection<string>? sortChoices = null, string? sortBy = null, bool sortDesc = false)
     {
         var s = AppSettings.Current.ContextMenu;
         var menu = new ContextMenu();
@@ -85,13 +96,7 @@ public static class ContextMenuBuilder
             { var mi = new MenuItem { Header = label, InputGestureText = gesture }; mi.Click += (_, _) => command("view:" + mode); view.Items.Add(mi); }
             menu.Items.Add(view);
             var sort = new MenuItem { Header = "Sort by" };
-            var choices = sortChoices ?? AppSettings.Current.Explorer.SortChoices;
-            foreach (var (label, key) in ShownSortKeys(choices))
-            { var mi = new MenuItem { Header = label }; mi.Click += (_, _) => command("sort:" + key); sort.Items.Add(mi); }
-            sort.Items.Add(new Separator());
-            foreach (var (l, c) in new[] { ("Ascending", "sortdir:asc"), ("Descending", "sortdir:desc") }) { var mi = new MenuItem { Header = l }; mi.Click += (_, _) => command(c); sort.Items.Add(mi); }
-            sort.Items.Add(new Separator());
-            sort.Items.Add(SortOptionsMenu(command, choices));
+            FillSortMenu(sort, command, sortChoices ?? AppSettings.Current.Explorer.SortChoices, sortBy, sortDesc);
             menu.Items.Add(sort);
             Add("Refresh", "refresh", "F5");
             menu.Items.Add(new Separator());
@@ -207,7 +212,85 @@ public static class ContextMenuBuilder
             menu.Items.Add(new Separator());
             Add("Properties", "properties", "Alt+Enter");
         }
+
+        // the owner's layout for this kind of thing, then "Context menu…" (never hideable, so the editor stays reachable)
+        var scopes = MenuScopes(items, background);
+        var full = EntryIds(menu);
+        var layouts = s.Layouts;
+        if (scopes.Select(sc => layouts.GetValueOrDefault(sc.Key)).FirstOrDefault(l => l != null) is { } layout) ApplyLayout(menu, layout);
+        menu.Items.Add(new Separator());
+        var edit = new MenuItem { Header = "Context menu…" };
+        edit.Click += (_, _) => EditLayout(owner, scopes, full);
+        menu.Items.Add(edit);
         return menu;
+    }
+
+    // ---------------------------------------------------------------- owner's menu layouts
+
+    /// <summary>Which layouts can apply to this menu, most specific first (a file type before all files).</summary>
+    private static (string Key, string Label)[] MenuScopes(IReadOnlyList<FileItem> items, bool background)
+    {
+        if (background) return new[] { ("background", "Empty space in a folder") };
+        if (items.All(i => i.IsDirectory)) return new[] { ("folders", "Folders") };
+        if (items.Any(i => i.IsDirectory)) return new[] { ("mixed", "Files and folders together") };
+        var exts = items.Select(i => i.Extension.ToLowerInvariant()).Distinct().ToList();
+        return exts.Count == 1 && exts[0].Length > 0
+            ? new[] { ("ext:" + exts[0], "." + exts[0] + " files"), ("files", "All files") }
+            : new[] { ("files", "All files") };
+    }
+
+    /// <summary>Stable names for the menu's top-level entries: the label (access-key marks removed), separators "---1", "---2"…</summary>
+    private static List<string> EntryIds(ItemsControl menu)
+    {
+        var ids = new List<string>();
+        int sep = 0;
+        foreach (var o in menu.Items) ids.Add(o is Separator ? "---" + (++sep) : o is MenuItem mi ? (mi.Header?.ToString() ?? "").Replace("_", "") : "");
+        return ids;
+    }
+
+    private static void ApplyLayout(ItemsControl menu, MenuLayout layout)
+    {
+        var items = menu.Items.Cast<object>().ToList();
+        var ids = EntryIds(menu);
+        var rank = new Dictionary<string, int>();
+        for (int i = 0; i < layout.Order.Count; i++) rank.TryAdd(layout.Order[i], i);
+        var hidden = new HashSet<string>(layout.Hidden);
+        // entries the layout doesn't know yet (new shell items…) go after the ordered ones, in their own order
+        var kept = items.Select((o, i) => (o, id: ids[i], r: rank.TryGetValue(ids[i], out var k) ? k : layout.Order.Count + i))
+            .Where(x => !hidden.Contains(x.id)).OrderBy(x => x.r).Select(x => x.o).ToList();
+        menu.Items.Clear();
+        foreach (var o in kept)
+        {
+            if (o is Separator && (menu.Items.Count == 0 || menu.Items[^1] is Separator)) continue;
+            menu.Items.Add(o);
+        }
+        while (menu.Items.Count > 0 && menu.Items[^1] is Separator) menu.Items.RemoveAt(menu.Items.Count - 1);
+    }
+
+    /// <summary>The "Context menu…" window: show/hide and reorder this menu's entries for this kind of thing.</summary>
+    private static void EditLayout(FrameworkElement owner, (string Key, string Label)[] scopes, List<string> full)
+    {
+        var s = AppSettings.Current.ContextMenu;
+        string Label(string id) => id.StartsWith("---") ? "──────── separator ────────" : id;
+        List<EditRow> Defaults(string? _) => full.Select(id => new EditRow { Id = id, Label = Label(id) }).ToList();
+        List<EditRow> Load(string? scope)
+        {
+            if (scope == null || !s.Layouts.TryGetValue(scope, out var l)) return Defaults(scope);
+            var rank = l.Order.Select((id, i) => (id, i)).GroupBy(x => x.id).ToDictionary(g => g.Key, g => g.First().i);
+            return full.Select((id, i) => (id, r: rank.TryGetValue(id, out var k) ? k : l.Order.Count + i)).OrderBy(x => x.r)
+                .Select(x => new EditRow { Id = x.id, Label = Label(x.id), Shown = !l.Hidden.Contains(x.id) }).ToList();
+        }
+        // open on the most specific scope that already has a layout, else the most specific one
+        string start = scopes.FirstOrDefault(sc => s.Layouts.ContainsKey(sc.Key)).Key ?? scopes[0].Key;
+        var win = new ListEditorWindow("Context menu", "Tick the entries to show in this menu and put them in the order you want. "
+            + "Windows' own entries are listed by name; ones that appear later (new programs) go at the end.", scopes, start, Load, Defaults, hotkeys: false)
+        { Owner = Window.GetWindow(owner) };
+        if (win.ShowDialog() != true || win.Scope == null) return;
+        var rows = win.Rows;
+        bool isDefault = rows.All(r => r.Shown) && rows.Select(r => r.Id).SequenceEqual(full);
+        if (isDefault) s.Layouts.Remove(win.Scope);
+        else s.Layouts[win.Scope] = new MenuLayout { Order = rows.Select(r => r.Id).ToList(), Hidden = rows.Where(r => !r.Shown).Select(r => r.Id).ToList() };
+        AppSettings.Current.Save();
     }
 
     private static bool IsDuplicate(ShellMenuEntry e, List<string> hidden)

@@ -2,6 +2,26 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.11
+
+### New
+- **Sort by shows the current sort and order** with a tick, like Explorer, in the right-click menu too, and each
+  sort's hotkey beside it.
+- **Sort hotkeys:** Ctrl+Alt+1 Name, 2 Date, 3 Date modified, 4 Type, 5 Size, 6 Date created (press again to flip the
+  order), Ctrl+Alt+PageUp Ascending, Ctrl+Alt+PageDown Descending.
+- **Sort by → More…** (also Sort options → "Choose sorts and hotkeys…") opens a large list like Explorer's: tick which
+  sorts Sort by shows, put them in order, and set or change each one's hotkey. Besides the basics (now with Location)
+  it offers file details FileHub indexes: Title, Author, Tags, Dimensions, Duration, Artist, Album, Genre, Year, Date
+  taken, Camera, Rating and more. It warns when two sorts share a hotkey.
+- **"Context menu…"** at the bottom of every right-click menu (after Properties): tick which entries show and put
+  them in order, for that kind of thing: one file type (e.g. .txt files), all files, folders, files and folders
+  together, or empty space in a folder. Windows' own entries are included; "Reset to defaults" undoes it.
+
+### Bug fixes
+- **The index could suddenly empty itself.** A file-watcher event that named the drive itself (it happens when Windows
+  loses track of a rename) removed the whole drive from the index, and the next save stored an empty index. Such
+  events are now ignored, and every folder removed from the index is logged.
+
 ## 0.3.10
 
 ### New

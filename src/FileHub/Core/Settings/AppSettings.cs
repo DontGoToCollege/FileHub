@@ -129,7 +129,9 @@ public sealed class ExplorerSettings : SettingsBase
     /// <summary>Sort changes apply to every folder (the default sort) instead of being remembered per folder.</summary>
     public bool SortAllFolders { get; set; }
     /// <summary>Which sorts the Sort by menus show (keys as in ContextMenuBuilder.SortKeys); folders may have their own list.</summary>
-    public List<string> SortChoices { get; set; } = new() { "Name", "Date", "Modified", "Type", "Size", "Created" };
+    public List<string> SortChoices { get; set; } = FileHub.Core.Search.SortFields.DefaultChoices();
+    /// <summary>Sort key (or "Ascending"/"Descending") → hotkey text such as "Ctrl+Alt+1".</summary>
+    public Dictionary<string, string> SortHotkeys { get; set; } = FileHub.Core.Search.SortFields.DefaultHotkeys();
     public List<ColumnSpec> DefaultColumns { get; set; } = new()
     {
         new() { Key = "Name", Width = 340 }, new() { Key = "Modified", Width = 150 }, new() { Key = "Type", Width = 150 }, new() { Key = "Size", Width = 90 }
@@ -188,10 +190,22 @@ public sealed class ContextMenuSettings : SettingsBase
     public bool ShowOpenInHub { get => _showOpenInHub; set => Set(ref _showOpenInHub, value); }
     /// <summary>Shell items whose label contains one of these strings are hidden.</summary>
     public List<string> HiddenShellItems { get; set; } = new();
+    /// <summary>
+    /// Per kind of right-clicked thing ("ext:txt", "files", "folders", "mixed", "background"): the owner's order and
+    /// hidden entries for that menu ("Context menu…" item).
+    /// </summary>
+    public Dictionary<string, MenuLayout> Layouts { get; set; } = new();
     public List<CustomMenuItem> Items { get; set; } = new()
     {
         new CustomMenuItem { Label = "Open in Notepad", Command = "notepad.exe", Arguments = "\"%1\"", ForFolders = false, Extensions = "txt;log;md;json;xml;ini;cfg;cs;js;ps1;bat" },
     };
+}
+
+/// <summary>Context menu entries (by label; separators as "---1", "---2"…) in the owner's order, and the hidden ones.</summary>
+public sealed class MenuLayout
+{
+    public List<string> Order { get; set; } = new();
+    public List<string> Hidden { get; set; } = new();
 }
 
 public sealed class PinnedItem : SettingsBase
