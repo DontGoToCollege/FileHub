@@ -273,13 +273,17 @@ public sealed class IndexService : IDisposable
                 string newName = Path.GetFileName(c.Path);
                 if (id >= 0)
                 {
+                    bool isDir = index[id].IsDirectory;   // read before Remove frees the slot
                     string oldParent = Path.GetDirectoryName(c.OldPath!) ?? string.Empty;
                     string newParent = Path.GetDirectoryName(c.Path) ?? string.Empty;
                     if (string.Equals(oldParent, newParent, StringComparison.OrdinalIgnoreCase)) index.Rename(id, newName);
                     else { index.Remove(id); AddPath(index, c.Path); }
-                    FileChanged?.Invoke(c.Path, index[id].IsDirectory);
+                    FileChanged?.Invoke(c.Path, isDir);
                 }
                 else AddPath(index, c.Path);
+                // drop the old path's content rows (and a folder's children); skip case-only renames, which would re-add the old casing
+                if (c.OldPath != null && !string.Equals(c.OldPath, c.Path, StringComparison.OrdinalIgnoreCase))
+                    FileChanged?.Invoke(c.OldPath, false);
                 break;
             }
             case FsChangeKind.Overflow:

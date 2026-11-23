@@ -2,6 +2,17 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.7
+
+### Bug fixes
+- **Search no longer finds text in files that were moved, renamed or deleted along with their folder.** Renaming or
+  deleting a folder left its files' text and details in the content index under the old location; renaming a file
+  left its old name there too. They're now removed right away (the new location is picked up by the next scan).
+- **Cut and paste into the same folder does nothing,** like Explorer, instead of showing a Windows error.
+- **Saving the index retries for a moment** if another program (such as a virus scanner) briefly holds its temp file,
+  instead of failing.
+- Fixed an internal mix-up when a file or folder was moved to a different folder while FileHub was watching.
+
 ## 0.3.6
 
 ### Bug fixes
@@ -31,7 +42,7 @@ Each version's program is kept in `Versions\Archive` and on the GitHub Releases 
 
 ### Bug fixes
 - **Typed text in search boxes was shifted right.** Every text box applied its padding twice, so text and the cursor
-  started well to the right of the "Search…" hint (Start menu, Explorer search, and other boxes). Text now starts
+  started well to the right of the "Searchâ€¦" hint (Start menu, Explorer search, and other boxes). Text now starts
   exactly where the hint does.
 
 ## 0.3.2

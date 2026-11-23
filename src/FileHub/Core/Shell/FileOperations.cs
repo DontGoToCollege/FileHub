@@ -41,6 +41,9 @@ public static class FileOperations
     public static bool Move(IntPtr hwnd, IReadOnlyList<string> sources, string destinationFolder)
     {
         if (sources.Count == 0) return false;
+        // moving a file into the folder it's already in is a no-op (like Explorer), not a shell error
+        sources = sources.Where(s => !string.Equals(Path.GetDirectoryName(s.TrimEnd('\\')), destinationFolder.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)).ToList();
+        if (sources.Count == 0) return true;
         var op = new Native.SHFILEOPSTRUCT
         {
             hwnd = hwnd, wFunc = Native.FO_MOVE, pFrom = Join(sources), pTo = destinationFolder + "\0\0",

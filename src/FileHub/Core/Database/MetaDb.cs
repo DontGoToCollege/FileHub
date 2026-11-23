@@ -177,11 +177,16 @@ public sealed class MetaDb : IDisposable
         {
             using var c = Open();
             using var cmd = c.CreateCommand();
-            cmd.CommandText = """
-                DELETE FROM content_fts WHERE rowid=(SELECT rowid FROM content_meta WHERE path=$p); DELETE FROM content_meta WHERE path=$p;
-                DELETE FROM props_fts WHERE rowid=(SELECT rowid FROM props WHERE path=$p); DELETE FROM props WHERE path=$p;
+            // the path itself plus everything under it (a deleted/renamed folder); "\" < "]" makes the range an exact prefix match
+            const string match = "(path=$p OR (path>=$lo AND path<$hi))";
+            cmd.CommandText = $"""
+                DELETE FROM content_fts WHERE rowid IN (SELECT rowid FROM content_meta WHERE {match}); DELETE FROM content_meta WHERE {match};
+                DELETE FROM props_fts WHERE rowid IN (SELECT rowid FROM props WHERE {match}); DELETE FROM props WHERE {match};
                 """;
+            string dir = path.TrimEnd('\\');
             cmd.Parameters.AddWithValue("$p", path);
+            cmd.Parameters.AddWithValue("$lo", dir + "\\");
+            cmd.Parameters.AddWithValue("$hi", dir + "]");
             cmd.ExecuteNonQuery();
         }
     }

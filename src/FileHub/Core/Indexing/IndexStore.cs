@@ -11,12 +11,22 @@ public static class IndexStore
     private const uint Magic = 0x46484442; // "FHDB"
     private const int Version = 1;
 
+    // the .tmp can be briefly held by another process (virus scanner, a second FileHub): retry a few times before failing
+    private static FileStream OpenForWrite(string tmp)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            try { return new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20); }
+            catch (IOException) when (attempt < 5) { Thread.Sleep(500); }
+        }
+    }
+
     public static void Save(FileIndex index, string path)
     {
         var compact = index.Compact();
         string tmp = path + ".tmp";
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 20))
+        using (var fs = OpenForWrite(tmp))
         using (var bw = new BinaryWriter(fs, Encoding.UTF8))
         {
             bw.Write(Magic);

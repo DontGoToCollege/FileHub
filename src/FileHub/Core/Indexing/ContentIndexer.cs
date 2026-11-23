@@ -180,7 +180,7 @@ public sealed class ContentIndexer : IDisposable
             ct.ThrowIfCancellationRequested();
             try
             {
-                if (!File.Exists(path)) { _db.RemovePath(path); continue; }
+                if (!File.Exists(path)) { if (!Directory.Exists(path)) _db.RemovePath(path); continue; }   // gone: drop it and, for a folder, its children
                 var fi = new FileInfo(path);
                 string ext = FileTypes.ExtensionOf(fi.Name);
                 if (_settings.Index.ContentIndexing && contentExts.Contains(ext) && fi.Length <= maxBytes)
