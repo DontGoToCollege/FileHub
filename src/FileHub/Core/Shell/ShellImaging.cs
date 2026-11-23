@@ -214,14 +214,17 @@ public sealed class ShellImaging
             int lines = Native.GetDIBits(hdc, hbmp, 0, (uint)h, buffer, ref bi, Native.DIB_RGB_COLORS);
             if (lines == 0) return null;
             // if the source had no alpha channel at all (all zero), treat as opaque
-            bool anyAlpha = false;
+            bool anyAlpha = false, straight = false;
             unsafe
             {
                 byte* p = (byte*)buffer;
                 for (int i = 3; i < stride * h; i += 4) if (p[i] != 0) { anyAlpha = true; break; }
                 if (!anyAlpha) for (int i = 3; i < stride * h; i += 4) p[i] = 255;
+                // some providers (folder previews at 256 px) hand back straight, not premultiplied, alpha: a see-through
+                // pixel still white. Read as premultiplied, that white is painted on: a white square behind the folder
+                else for (int i = 3; i < stride * h; i += 4) if (p[i - 1] > p[i] || p[i - 2] > p[i] || p[i - 3] > p[i]) { straight = true; break; }
             }
-            var bmp = BitmapSource.Create(w, h, 96, 96, PixelFormats.Pbgra32, null, buffer, stride * h, stride);
+            var bmp = BitmapSource.Create(w, h, 96, 96, straight ? PixelFormats.Bgra32 : PixelFormats.Pbgra32, null, buffer, stride * h, stride);
             bmp.Freeze();
             return bmp;
         }

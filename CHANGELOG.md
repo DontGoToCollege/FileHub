@@ -2,6 +2,13 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.29
+
+### Fixed
+- **Folder previews no longer sit on a white square.** Some of Windows' folder previews (seen at Extra large icons)
+  come back with "straight" transparency, where see-through pixels still carry white; FileHub read them as the other
+  kind and painted that white on. It now tells the two apart.
+
 ## 0.3.28
 
 ### New
