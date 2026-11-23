@@ -2,6 +2,16 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.30
+
+### Fixed
+- **Thumbnails are made while content indexing runs.** The thumbnail pass used to wait until content indexing had
+  nothing left to do, so on a PC still working through a big first content pass (hours with hard drives) no
+  thumbnails were made ahead of time at all, and nothing said why. Now both run together on NVMe, SSD and removable
+  drives; only a hard drive's thumbnails wait for content indexing to finish (two passes reading one hard drive at
+  once would slow both), and the status line then says "Thumbnails 12,000 / 45,000 (hard drives wait for content
+  indexing)".
+
 ## 0.3.29
 
 ### Fixed

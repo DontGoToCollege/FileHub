@@ -12,8 +12,8 @@ namespace FileHub.Core.Indexing;
 /// <summary>
 /// Makes thumbnails ahead of time, in the background, so icon views show them at once instead of when a folder is first
 /// opened. Covers pictures, videos and PDFs everywhere except Windows, program and code-library folders (their images
-/// are made when such a folder is opened, then kept). A pass runs at start and every 30 minutes, only while the content
-/// indexer isn't in a pass of its own (both read every file of a drive), in the same drive order: NVMe, SSD, removable,
+/// are made when such a folder is opened, then kept). A pass runs at start and every 30 minutes, alongside the content
+/// indexer (on a hard drive only once that is done: both read every file), in the same drive order: NVMe, SSD, removable,
 /// hard drive, A to Z, a hard drive one file at a time. Files saved or changed are done right away.
 /// </summary>
 public sealed class ThumbIndexer : IDisposable
@@ -64,7 +64,7 @@ public sealed class ThumbIndexer : IDisposable
             {
                 if (_paused || !_settings.Index.ThumbnailCaching) { Thread.Sleep(2000); continue; }
                 if (DrainChanged(ct)) continue;
-                if ((_fullPassRequested || (DateTime.UtcNow - lastPass).TotalMinutes > 30) && _index.State == IndexState.Ready && !_content.IsRunning)
+                if ((_fullPassRequested || (DateTime.UtcNow - lastPass).TotalMinutes > 30) && _index.State == IndexState.Ready)
                 {
                     _fullPassRequested = false;
                     try { FullPass(ct); } finally { IsRunning = false; }
@@ -123,13 +123,17 @@ public sealed class ThumbIndexer : IDisposable
         const int chunk = 200;
         for (int from = 0; from < todo.Count; from += chunk)
         {
-            // the content pass and live changes go first; a pause or a new pass stops this one (done thumbnails are kept)
-            while (_content.IsRunning && !_paused && !ct.IsCancellationRequested) { Status($"Thumbnails {Processed:N0} / {Candidates:N0} (waiting for content indexing)"); Thread.Sleep(2000); }
+            // runs alongside content indexing, except on a hard drive: two passes reading one at once would send its head
+            // back and forth and slow both, so its thumbnails wait for the content pass. A pause or a new pass stops this
+            // one (done thumbnails are kept)
+            var files = todo.GetRange(from, Math.Min(chunk, todo.Count - from));
+            while (_content.IsRunning && files.Any(f => ContentIndexer.DriveOf(f.path).oneAtATime) && !_paused && !_fullPassRequested && !ct.IsCancellationRequested)
+            { Status($"Thumbnails {Processed:N0} / {Candidates:N0} (hard drives wait for content indexing)"); Thread.Sleep(2000); }
             if (_paused || _fullPassRequested) break;
             ct.ThrowIfCancellationRequested();
             DrainChanged(ct);
             Status($"Thumbnails {Processed:N0} / {Candidates:N0}");
-            _db.Put(Make(todo.GetRange(from, Math.Min(chunk, todo.Count - from)).Select(t => (t.path, t.modified)).ToList(), ct));
+            _db.Put(Make(files.Select(t => (t.path, t.modified)).ToList(), ct));
             Processed = Math.Min(todo.Count, from + chunk);
         }
         Status(_paused ? $"Paused at {Processed:N0} / {Candidates:N0}" : $"Thumbnails up to date ({_db.Count():N0})");
