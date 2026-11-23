@@ -10,3 +10,4 @@ obj/
 .vs/
 *.user
 __pycache__/
+.claude/handoffs/
