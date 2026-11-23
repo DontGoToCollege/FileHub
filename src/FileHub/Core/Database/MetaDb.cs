@@ -20,16 +20,72 @@ public sealed class MetaDb : IDisposable
         _connString = new SqliteConnectionStringBuilder { DataSource = file, Cache = SqliteCacheMode.Private, Pooling = true /* private cache + WAL: readers never wait on the content indexer's writes */ }.ToString();
         using var c = Open();
         Exec(c, "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA temp_store=MEMORY;");
-        Exec(c, """
+        bool fresh = Scalar(c, "SELECT count(*) FROM sqlite_master WHERE name='content_fts'") == 0;
+        Exec(c, $"""
             CREATE TABLE IF NOT EXISTS content_meta(path TEXT PRIMARY KEY, modified INTEGER NOT NULL, size INTEGER NOT NULL, indexed INTEGER NOT NULL);
-            CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(path UNINDEXED, body, tokenize='unicode61 remove_diacritics 2');
+            CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING {ContentFtsDef};
             CREATE TABLE IF NOT EXISTS props(path TEXT PRIMARY KEY, modified INTEGER NOT NULL, json TEXT NOT NULL);
             CREATE VIRTUAL TABLE IF NOT EXISTS props_fts USING fts5(path UNINDEXED, body, tokenize='unicode61 remove_diacritics 2');
             CREATE TABLE IF NOT EXISTS thumbs(key TEXT PRIMARY KEY, modified INTEGER NOT NULL, png BLOB NOT NULL, accessed INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS folder_views(path TEXT PRIMARY KEY, json TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT);
             """);
-        MigrateFtsToRowids(c);
+        if (fresh) Exec(c, "PRAGMA user_version = 2");
+        else MigrateFtsToRowids(c);
+    }
+
+    /// <summary>
+    /// Schema 2 content table: only the search index (FileHub never reads the text back; that stored copy was most of
+    /// the 5 GB database) plus prefix indexes for 3- and 4-letter word starts, so as-you-type searches like "con" don't
+    /// expand into every word that starts that way. contentless_delete keeps rowid DELETEs working.
+    /// </summary>
+    private const string ContentFtsDef = "fts5(body, content='', contentless_delete=1, prefix='3 4', tokenize='unicode61 remove_diacritics 2')";
+
+    private static long Scalar(SqliteConnection c, string sql, SqliteTransaction? tx = null, long cursor = 0)
+    {
+        using var cmd = c.CreateCommand();
+        cmd.Transaction = tx; cmd.CommandText = sql; cmd.Parameters.AddWithValue("$c", cursor);
+        return cmd.ExecuteScalar() is long v ? v : -1;
+    }
+
+    /// <summary>
+    /// One-time copy of a schema-1 content table into the schema-2 one, in short batches (writes elsewhere wait a
+    /// second at most; searches keep using the old table until the swap). Resumes where it stopped after a restart.
+    /// Runs on the content indexer's thread, the only writer of the content tables.
+    /// </summary>
+    public void UpgradeContentFts(CancellationToken ct)
+    {
+        using (var c = Open()) if (Scalar(c, "PRAGMA user_version") >= 2) return;
+        Log.Info("Upgrading the content index to schema 2 (one time, in the background; search keeps working)");
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        long copied = 0;
+        while (!ct.IsCancellationRequested)
+        {
+            lock (_writeLock)
+            {
+                using var c = Open();
+                if (Scalar(c, "PRAGMA user_version") >= 2) return;   // ClearContent finished it meanwhile
+                using var tx = c.BeginTransaction();
+                Exec(c, $"CREATE VIRTUAL TABLE IF NOT EXISTS content_fts_v2 USING {ContentFtsDef}", tx);
+                long cursor = Math.Max(0, Scalar(c, "SELECT CAST(value AS INTEGER) FROM kv WHERE key='fts_v2_cursor'", tx));
+                long next = Scalar(c, "SELECT max(r) FROM (SELECT rowid AS r FROM content_fts WHERE rowid > $c ORDER BY rowid LIMIT 500)", tx, cursor);
+                if (next < 0)
+                {
+                    Exec(c, "DROP TABLE content_fts; ALTER TABLE content_fts_v2 RENAME TO content_fts; DELETE FROM kv WHERE key='fts_v2_cursor'; PRAGMA user_version = 2;", tx);
+                    tx.Commit();
+                    Log.Info($"Content index upgraded: {copied:N0} documents copied in {sw.Elapsed.TotalSeconds:F0} s this run");
+                    return;
+                }
+                using (var cmd = c.CreateCommand())
+                {
+                    cmd.Transaction = tx;
+                    cmd.CommandText = "INSERT INTO content_fts_v2(rowid, body) SELECT rowid, body FROM content_fts WHERE rowid > $c AND rowid <= $n; INSERT OR REPLACE INTO kv(key, value) VALUES('fts_v2_cursor', $n);";
+                    cmd.Parameters.AddWithValue("$c", cursor); cmd.Parameters.AddWithValue("$n", next);
+                    copied += cmd.ExecuteNonQuery() - 1;   // minus the cursor row
+                }
+                tx.Commit();
+            }
+        }
     }
 
     /// <summary>
@@ -67,12 +123,12 @@ public sealed class MetaDb : IDisposable
             // never block startup: start the content/metadata tables over; the indexer refills them
             Log.Error("meta.db migration failed; content and metadata will be re-indexed", ex);
             tx.Rollback();
-            Exec(c, """
+            Exec(c, $"""
                 DROP TABLE IF EXISTS content_fts_new; DROP TABLE IF EXISTS props_fts_new;
                 DELETE FROM content_meta; DELETE FROM props; DROP TABLE content_fts; DROP TABLE props_fts;
-                CREATE VIRTUAL TABLE content_fts USING fts5(path UNINDEXED, body, tokenize='unicode61 remove_diacritics 2');
+                CREATE VIRTUAL TABLE content_fts USING {ContentFtsDef};
                 CREATE VIRTUAL TABLE props_fts USING fts5(path UNINDEXED, body, tokenize='unicode61 remove_diacritics 2');
-                PRAGMA user_version = 1;
+                PRAGMA user_version = 2;
                 """);
         }
     }
@@ -84,9 +140,10 @@ public sealed class MetaDb : IDisposable
         return c;
     }
 
-    private static void Exec(SqliteConnection c, string sql)
+    private static void Exec(SqliteConnection c, string sql, SqliteTransaction? tx = null)
     {
         using var cmd = c.CreateCommand();
+        cmd.Transaction = tx;
         cmd.CommandText = sql;
         cmd.ExecuteNonQuery();
     }
@@ -136,14 +193,15 @@ public sealed class MetaDb : IDisposable
             meta.CommandText = "INSERT INTO content_meta(path, modified, size, indexed) VALUES($p,$m,$s,$i) ON CONFLICT(path) DO UPDATE SET modified=excluded.modified, size=excluded.size, indexed=excluded.indexed RETURNING rowid";
             var mp = meta.Parameters.Add("$p", SqliteType.Text); var mm = meta.Parameters.Add("$m", SqliteType.Integer); var ms = meta.Parameters.Add("$s", SqliteType.Integer); var mi = meta.Parameters.Add("$i", SqliteType.Integer);
             using var del = c.CreateCommand(); del.Transaction = tx; del.CommandText = "DELETE FROM content_fts WHERE rowid=$r"; var dr = del.Parameters.Add("$r", SqliteType.Integer);
-            using var ins = c.CreateCommand(); ins.Transaction = tx; ins.CommandText = "INSERT INTO content_fts(rowid, path, body) VALUES($r,$p,$b)"; var ir = ins.Parameters.Add("$r", SqliteType.Integer); var ip = ins.Parameters.Add("$p", SqliteType.Text); var ib = ins.Parameters.Add("$b", SqliteType.Text);
+            // no path column: works on both the schema-1 table (path left empty) and the schema-2 contentless one
+            using var ins = c.CreateCommand(); ins.Transaction = tx; ins.CommandText = "INSERT INTO content_fts(rowid, body) VALUES($r,$b)"; var ir = ins.Parameters.Add("$r", SqliteType.Integer); var ib = ins.Parameters.Add("$b", SqliteType.Text);
             long now = DateTime.UtcNow.Ticks;
             foreach (var (path, modified, size, body) in rows)
             {
                 mp.Value = path; mm.Value = modified; ms.Value = size; mi.Value = now;
                 long rowid = Convert.ToInt64(meta.ExecuteScalar());
                 dr.Value = rowid; del.ExecuteNonQuery();
-                if (body.Length > 0) { ir.Value = rowid; ip.Value = path; ib.Value = body; ins.ExecuteNonQuery(); }
+                if (body.Length > 0) { ir.Value = rowid; ib.Value = body; ins.ExecuteNonQuery(); }
             }
             tx.Commit();
         }
@@ -252,11 +310,16 @@ public sealed class MetaDb : IDisposable
             foreach (var (table, meta) in includeProps ? new[] { ("content_fts", "content_meta"), ("props_fts", "props") } : new[] { ("content_fts", "content_meta") })
             {
                 using var cmd = c.CreateCommand();
-                // the path comes from the meta table (same rowid): reading it from the FTS row loads each file's whole
-                // stored text, which made a content search take 0.2–2 s instead of 10–500 ms
-                cmd.CommandText = $"SELECT m.path FROM (SELECT rowid AS r, rank AS rk FROM {table} WHERE {table} MATCH $q ORDER BY rank LIMIT $n) x JOIN {meta} m ON m.rowid = x.r ORDER BY x.rk";
                 cmd.Parameters.AddWithValue("$q", match);
                 cmd.Parameters.AddWithValue("$n", limit);
+                // ranking scores every match, so a half-typed word in 50,000 files ("con") costs ~1 s; counting is cheap
+                // with the prefix index. Past 5,000 matches skip the rank (the caller still lists your documents first).
+                cmd.CommandText = $"SELECT count(*) FROM {table} WHERE {table} MATCH $q";
+                bool rank = Convert.ToInt64(cmd.ExecuteScalar()) <= 5000;
+                // the path comes from the meta table (same rowid); the FTS row has none (schema 2) or its whole text with it
+                cmd.CommandText = rank
+                    ? $"SELECT m.path FROM (SELECT rowid AS r, rank AS rk FROM {table} WHERE {table} MATCH $q ORDER BY rank LIMIT $n) x JOIN {meta} m ON m.rowid = x.r ORDER BY x.rk"
+                    : $"SELECT m.path FROM (SELECT rowid AS r FROM {table} WHERE {table} MATCH $q LIMIT $n) x JOIN {meta} m ON m.rowid = x.r ORDER BY x.r";
                 using var r = cmd.ExecuteReader();
                 while (r.Read()) { var p = r.GetString(0); if (seen.Add(p)) results.Add(p); }
             }
@@ -312,7 +375,12 @@ public sealed class MetaDb : IDisposable
         lock (_writeLock)
         {
             using var c = Open();
-            Exec(c, "DELETE FROM content_fts; DELETE FROM content_meta; DELETE FROM props_fts; DELETE FROM props;");
+            // recreated rather than emptied: also finishes a pending schema-2 upgrade
+            Exec(c, $"""
+                DROP TABLE IF EXISTS content_fts_v2; DROP TABLE content_fts; CREATE VIRTUAL TABLE content_fts USING {ContentFtsDef};
+                DELETE FROM kv WHERE key='fts_v2_cursor'; PRAGMA user_version = 2;
+                DELETE FROM content_meta; DELETE FROM props_fts; DELETE FROM props;
+                """);
         }
     }
 

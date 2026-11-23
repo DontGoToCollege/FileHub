@@ -2,6 +2,23 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.16
+
+### Faster
+- **Content searches are instant again.** `content:wants` took 27 s with the type tabs (each click re-ran it): matching
+  the results to files scanned the whole 1.1-million-entry index once per folder. Now it's a lookup (27 s → 25 ms;
+  Documents tab 31 ms).
+- **As-you-type content search no longer stalls the Start menu.** The content index now has prefix indexes for 3- and
+  4-letter word starts, and half-typed words found in thousands of files skip the costly best-match ranking ("con":
+  1.4 s → 0.1 s).
+- **Smaller content index.** It no longer keeps a second copy of every file's text (FileHub never reads it back).
+  The first start of 0.3.16 converts the existing index in the background (about 5 minutes; search keeps working).
+  The database file keeps its size until the freed space is reused.
+
+### Bug fixes
+- A typed `content:` search in the Start menu keeps the best-match order instead of re-sorting by name length.
+- Files saved the "safe" way (write a temp file, rename it over the original) no longer leave a duplicate entry.
+
 ## 0.3.15
 
 ### Bug fixes

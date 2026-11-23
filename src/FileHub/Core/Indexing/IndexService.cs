@@ -296,7 +296,13 @@ public sealed class IndexService : IDisposable
                     bool isDir = index[id].IsDirectory;   // read before Remove frees the slot
                     string oldParent = Path.GetDirectoryName(c.OldPath!) ?? string.Empty;
                     string newParent = Path.GetDirectoryName(c.Path) ?? string.Empty;
-                    if (string.Equals(oldParent, newParent, StringComparison.OrdinalIgnoreCase)) index.Rename(id, newName);
+                    if (string.Equals(oldParent, newParent, StringComparison.OrdinalIgnoreCase))
+                    {
+                        // safe-save (write temp, rename over the original): the original's entry would stay as a duplicate
+                        int dup = index.FindByPath(c.Path);
+                        if (dup >= 0 && dup != id) RemoveLogged(index, dup, c.Path);
+                        index.Rename(id, newName);
+                    }
                     else
                     {
                         // moved to another folder; only drop the old entry if it's really gone from the old place

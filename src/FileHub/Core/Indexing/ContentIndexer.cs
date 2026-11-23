@@ -71,10 +71,13 @@ public sealed class ContentIndexer : IDisposable
     {
         var ct = _cts.Token;
         var lastPass = DateTime.MinValue;
+        bool upgraded = false;
         while (!ct.IsCancellationRequested)
         {
             try
             {
+                // one try per run: if it fails, indexing carries on with the old table (writes work on both) and it resumes next start
+                if (!upgraded) { upgraded = true; Status("Upgrading the content index (one time)…"); _db.UpgradeContentFts(ct); Status("Idle"); }
                 if (_paused) { Thread.Sleep(1000); continue; }
                 if (!_settings.Index.ContentIndexing && !_settings.Index.MetadataIndexing) { Thread.Sleep(2000); continue; }
 

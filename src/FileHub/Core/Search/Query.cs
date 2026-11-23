@@ -182,14 +182,23 @@ public sealed class InFolderNode : QueryNode
 
 public sealed class PathSetNode : QueryNode
 {
-    // resolved to ids once: building the path of every one of ~600k entries per search was the slow part
-    private readonly HashSet<int> _ids = new();
+    // keyed by parent folder id + name: the folder lookup is a dictionary hit, whereas FindByPath's first visit to each
+    // folder scans the whole index (a content search touching ~1,000 folders took 27 s)
+    private readonly Dictionary<int, HashSet<string>> _byParent = new();
     public PathSetNode(FileIndex index, IEnumerable<string> paths)
     {
-        foreach (var p in paths) { int id = index.FindByPath(p); if (id >= 0) _ids.Add(id); }
+        foreach (var p in paths)
+        {
+            int sep = p.LastIndexOf('\\');
+            if (sep <= 0 || sep == p.Length - 1) continue;
+            int dir = index.FindDirectory(sep == 2 && p[1] == ':' ? p[..3] : p[..sep]);
+            if (dir < 0) continue;
+            if (!_byParent.TryGetValue(dir, out var names)) _byParent[dir] = names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            names.Add(p[(sep + 1)..]);
+        }
     }
-    public int Count => _ids.Count;
-    public override bool Match(FileIndex index, int id, ref Entry e, ref string? path) => _ids.Contains(id);
+    public override bool Match(FileIndex index, int id, ref Entry e, ref string? path)
+        => e.Name != null && _byParent.TryGetValue(e.Parent, out var names) && names.Contains(e.Name);
 }
 
 public sealed class EmptyNode : QueryNode

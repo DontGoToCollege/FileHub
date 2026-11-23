@@ -205,7 +205,8 @@ public partial class StartMenuWindow : Window
             {
                 var options = new SearchOptions { MaxResults = 20000, Sort = SortKey.None, IncludeContent = s.SearchContent };
                 var result = App.Search.Search(text, options, cts.Token);
-                var ranked = SearchEngine.RankForQuickSearch(result, text, take).ToList();
+                // a typed content: search is already best-match first (your documents first); re-ranking by name would bury them
+                var ranked = result.Ranked ? result.Ids.Take(take).ToList() : SearchEngine.RankForQuickSearch(result, text, take).ToList();
                 // content matches (best first) get at least a third of the list, so file names can't crowd them out
                 var content = result.Ids.Skip(result.ContentFrom).Take(take).ToList();
                 int room = Math.Min(content.Count, Math.Max(take - ranked.Count, take / 3));
