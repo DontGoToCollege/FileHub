@@ -40,7 +40,7 @@ public sealed class ThumbIndexer : IDisposable
         _index.FileChanged += (path, isDir) => { if (!isDir) _changed.Writer.TryWrite(path); };
     }
 
-    public bool Paused { get => _paused; set { _paused = value; Status(value ? "Thumbnails paused" : "Thumbnails idle"); if (!value) _fullPassRequested = true; } }
+    public bool Paused { get => _paused; set { _paused = value; Status(value ? "Thumbnails paused" : IsRunning ? "Thumbnails resuming…" : "Thumbnails idle"); if (!value) _fullPassRequested = true; } }
 
     public void Start()
     {
@@ -136,6 +136,7 @@ public sealed class ThumbIndexer : IDisposable
             _db.Put(Make(files.Select(t => (t.path, t.modified)).ToList(), ct));
             Processed = Math.Min(todo.Count, from + chunk);
         }
+        if (_fullPassRequested && !_paused) return;   // cut short for a new pass, which sets its own status: not up to date yet
         Status(_paused ? $"Thumbnails paused at {Processed:N0} / {Candidates:N0}" : $"Thumbnails up to date ({_db.Count():N0})");
     }
 

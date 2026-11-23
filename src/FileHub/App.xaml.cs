@@ -65,7 +65,7 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += (_, ex) => Log.Error("Unhandled exception", ex.ExceptionObject as Exception);
         TaskScheduler.UnobservedTaskException += (_, ex) => { Log.Error("Unobserved task exception", ex.Exception); ex.SetObserved(); };
 
-        Log.Info($"FileHub starting ({string.Join(" ", args)})");
+        Log.Info($"FileHub {typeof(App).Assembly.GetName().Version?.ToString(3)} starting ({string.Join(" ", args)})");
         Settings = AppSettings.Load();
         ThemeManager.Apply(Settings.General.Theme);
 

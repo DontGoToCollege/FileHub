@@ -49,7 +49,8 @@ public sealed class ContentIndexer : IDisposable
         set
         {
             _paused = value;
-            Status(value ? "Content indexing paused" : "Content indexing idle");
+            // a pass still finishing the chunk it was reading (minutes on a hard drive) is not idle
+            Status(value ? "Content indexing paused" : IsRunning ? "Content indexing resuming…" : "Content indexing idle");
             if (!value) RequestFullPass();   // pick up where the interrupted pass left off (already-indexed files are skipped)
         }
     }
@@ -214,6 +215,14 @@ public sealed class ContentIndexer : IDisposable
             }
         }, ct);
 
+        // one "done" line per drive (last todo index, file count), so each drive's speed shows in the log
+        var driveRuns = new List<(int key, int end, int files)>();
+        for (int k = 0; k < todo.Count; k++)
+            if (driveRuns.Count > 0 && driveRuns[^1].key == todo[k].drive) driveRuns[^1] = (todo[k].drive, k, driveRuns[^1].files + 1);
+            else driveRuns.Add((todo[k].drive, k, 1));
+        int nextDone = 0;
+        var driveClock = System.Diagnostics.Stopwatch.StartNew();
+
         var next = todo.Count > 0 ? Read(0) : null;
         for (int from = 0; next != null; from += chunk)
         {
@@ -224,6 +233,12 @@ public sealed class ContentIndexer : IDisposable
             if (props.Count > 0) _db.UpsertPropsBatch(props);
             Processed = Math.Min(todo.Count, from + chunk);
             Status($"Indexing content {Processed:N0} / {Candidates:N0}");
+            for (; nextDone < driveRuns.Count && driveRuns[nextDone].end < Processed; nextDone++, driveClock.Restart())
+            {
+                var (_, end, files) = driveRuns[nextDone];
+                double s = driveClock.Elapsed.TotalSeconds;
+                Log.Info($"Drive {todo[end].path[0]}: contents done, {files:N0} files in {(s < 120 ? $"{s:N1} s" : $"{s / 60:N0} min")} ({files / Math.Max(0.1, s):N0} files/s)");
+            }
             // files saved meanwhile go first; the chunk being read may hold an older copy of one, so it's read again after
             if (_changed.Reader.TryPeek(out _))
             {
@@ -234,6 +249,7 @@ public sealed class ContentIndexer : IDisposable
         }
         IsRunning = false;
         if (_paused) { Status($"Content indexing paused at {Processed:N0} / {Candidates:N0}"); return; }
+        if (_fullPassRequested) return;   // cut short for a new pass, which sets its own status: not up to date yet
         var stats = _db.Stats();
         Status($"Content index up to date ({stats.contentRows:N0} documents, {stats.propsRows:N0} with metadata)");
     }

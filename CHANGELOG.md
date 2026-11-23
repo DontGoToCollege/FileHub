@@ -2,6 +2,18 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.32
+
+### Changed
+- **The log shows how fast each drive's contents are indexed.** When the content pass finishes a drive it writes one
+  line, for example "Drive E: contents done, 12,400 files in 38 min (5 files/s)", so a slow hard drive is easy to spot.
+- **The log names the version.** Each start now reads "FileHub 0.3.32 starting", so a sent log shows which build ran.
+### Fixed
+- **"Idle" no longer shows while indexing is still at work.** Resuming after a pause showed "Content indexing idle" and
+  "Thumbnails idle" while the pass was still finishing the files it was reading (minutes on a hard drive); it now reads
+  "resuming…" until the pass reports progress. A pass cut short to start over no longer flashes "up to date" either.
+  Finished passes read "Content index up to date (…)" and "Thumbnails up to date (…)"; "idle" only means none is running.
+
 ## 0.3.31
 
 ### Changed
