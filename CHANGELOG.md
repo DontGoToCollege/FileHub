@@ -2,6 +2,15 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.31
+
+### Changed
+- **Every screen shows the same indexing status.** The Hub's side panel and Hub → Index & database now list
+  thumbnails too, next to the name index and file contents, exactly as Explorer's status line does ("Thumbnails
+  8,800 / 45,663"). All three now come from one place, so a background task added later appears on all of them at
+  once. Each line names its task ("Thumbnails idle", "Content indexing paused at 12,000 / 390,000"). The Start menu
+  still shows none.
+
 ## 0.3.30
 
 ### Fixed

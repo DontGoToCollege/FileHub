@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using FileHub.UI.Common;
 using FileHub.Core.Settings;
 using FileHub.Platform;
 
@@ -20,8 +21,8 @@ public partial class IndexPage : UserControl, ISavablePage, IRefreshablePage
         ContentExtBox.Text = string.Join(" ", s.ContentExtensions);
         MetaOn.IsChecked = s.MetadataIndexing; MetaExtBox.Text = string.Join(" ", s.MetadataExtensions);
         ThumbsOn.IsChecked = s.ThumbnailCaching;
-        App.Index.StatusChanged += OnStatus; App.Content.StatusChanged += OnStatus;
-        Unloaded += (_, _) => { App.Index.StatusChanged -= OnStatus; App.Content.StatusChanged -= OnStatus; };
+        IndexingStatus.Subscribe(OnStatus);
+        Unloaded += (_, _) => IndexingStatus.Unsubscribe(OnStatus);
         RefreshPage();
     }
 
@@ -38,7 +39,7 @@ public partial class IndexPage : UserControl, ISavablePage, IRefreshablePage
             StatsText.Text = $"{idx.Index.LiveCount:N0} files and folders in memory · built {idx.Index.BuiltUtc.ToLocalTime():g} · {snap} · roots: {string.Join(", ", idx.GetRoots())}";
         }
         catch { }
-        ContentStatusText.Text = "Content indexer: " + App.Content.StatusText;
+        ContentStatusText.Text = IndexingStatus.PassLines;
         Task.Run(() =>
         {
             try

@@ -29,7 +29,7 @@ public sealed class ContentIndexer : IDisposable
     private Thread? _thread;
     private volatile bool _paused;
 
-    public string StatusText { get; private set; } = "Idle";
+    public string StatusText { get; private set; } = "Content indexing idle";
     public long Processed { get; private set; }
     public long Candidates { get; private set; }
     public bool IsRunning { get; private set; }
@@ -49,7 +49,7 @@ public sealed class ContentIndexer : IDisposable
         set
         {
             _paused = value;
-            Status(value ? "Paused" : "Idle");
+            Status(value ? "Content indexing paused" : "Content indexing idle");
             if (!value) RequestFullPass();   // pick up where the interrupted pass left off (already-indexed files are skipped)
         }
     }
@@ -77,9 +77,9 @@ public sealed class ContentIndexer : IDisposable
             try
             {
                 // a damaged meta.db (seen by a search or a write here) is replaced, then every file is read again
-                if (_db.RecoverRequested) { Status("Repairing the content index…"); _db.Recover(); RequestFullPass(); Status("Idle"); }
+                if (_db.RecoverRequested) { Status("Repairing the content index…"); _db.Recover(); RequestFullPass(); Status("Content indexing idle"); }
                 // one try per run: if it fails, indexing carries on with the old table (writes work on both) and it resumes next start
-                if (!upgraded) { upgraded = true; Status("Upgrading the content index (one time)…"); _db.UpgradeContentFts(ct); Status("Idle"); }
+                if (!upgraded) { upgraded = true; Status("Upgrading the content index (one time)…"); _db.UpgradeContentFts(ct); Status("Content indexing idle"); }
                 if (_paused) { Thread.Sleep(1000); continue; }
                 if (!_settings.Index.ContentIndexing && !_settings.Index.MetadataIndexing) { Thread.Sleep(2000); continue; }
 
@@ -233,7 +233,7 @@ public sealed class ContentIndexer : IDisposable
             }
         }
         IsRunning = false;
-        if (_paused) { Status($"Paused at {Processed:N0} / {Candidates:N0}"); return; }
+        if (_paused) { Status($"Content indexing paused at {Processed:N0} / {Candidates:N0}"); return; }
         var stats = _db.Stats();
         Status($"Content index up to date ({stats.contentRows:N0} documents, {stats.propsRows:N0} with metadata)");
     }

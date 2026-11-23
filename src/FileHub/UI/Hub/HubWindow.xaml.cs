@@ -16,20 +16,19 @@ public partial class HubWindow : Window
     {
         InitializeComponent();
         ThemeManager.ApplyToWindow(this);
-        App.Index.StatusChanged += OnStatus;
-        App.Content.StatusChanged += OnStatus;
+        IndexingStatus.Subscribe(OnStatus);
         OnStatus();
         App.IndexControlChanged += SyncIndexToggles;
         SyncIndexToggles();
         Closing += (_, _) => { SaveCurrent(); AppSettings.Current.Save(); App.ApplySettings(); };
-        Closed += (_, _) => { App.Index.StatusChanged -= OnStatus; App.Content.StatusChanged -= OnStatus; App.IndexControlChanged -= SyncIndexToggles; };
+        Closed += (_, _) => { IndexingStatus.Unsubscribe(OnStatus); App.IndexControlChanged -= SyncIndexToggles; };
         Navigate("search");
     }
 
     private void OnStatus() => Dispatcher.BeginInvoke(() =>
     {
-        IndexStatus.Text = "Index: " + App.Index.StatusText;
-        ContentStatus.Text = App.Content.StatusText;
+        IndexStatus.Text = IndexingStatus.IndexLine;
+        ContentStatus.Text = IndexingStatus.PassLines;
     });
 
     public void Navigate(string page, string? query = null)

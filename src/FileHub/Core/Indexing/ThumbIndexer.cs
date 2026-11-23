@@ -30,7 +30,7 @@ public sealed class ThumbIndexer : IDisposable
     public bool IsRunning { get; private set; }
     public int Candidates { get; private set; }
     public int Processed { get; private set; }
-    public string StatusText { get; private set; } = "Idle";
+    public string StatusText { get; private set; } = "Thumbnails idle";
     public event Action? StatusChanged;
 
     public ThumbIndexer(IndexService index, ThumbDb db, AppSettings settings, ContentIndexer content)
@@ -40,7 +40,7 @@ public sealed class ThumbIndexer : IDisposable
         _index.FileChanged += (path, isDir) => { if (!isDir) _changed.Writer.TryWrite(path); };
     }
 
-    public bool Paused { get => _paused; set { _paused = value; Status(value ? "Paused" : "Idle"); if (!value) _fullPassRequested = true; } }
+    public bool Paused { get => _paused; set { _paused = value; Status(value ? "Thumbnails paused" : "Thumbnails idle"); if (!value) _fullPassRequested = true; } }
 
     public void Start()
     {
@@ -136,7 +136,7 @@ public sealed class ThumbIndexer : IDisposable
             _db.Put(Make(files.Select(t => (t.path, t.modified)).ToList(), ct));
             Processed = Math.Min(todo.Count, from + chunk);
         }
-        Status(_paused ? $"Paused at {Processed:N0} / {Candidates:N0}" : $"Thumbnails up to date ({_db.Count():N0})");
+        Status(_paused ? $"Thumbnails paused at {Processed:N0} / {Candidates:N0}" : $"Thumbnails up to date ({_db.Count():N0})");
     }
 
     /// <summary>

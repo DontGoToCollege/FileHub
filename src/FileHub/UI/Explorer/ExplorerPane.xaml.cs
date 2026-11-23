@@ -49,33 +49,24 @@ public partial class ExplorerPane : UserControl
         NavTree.ItemsSource = _navRoots;
         UpdateCrumbs();
         ApplyTabState();
-        App.Index.StatusChanged += OnIndexStatus; App.Content.StatusChanged += OnIndexStatus; App.ThumbPass.StatusChanged += OnIndexStatus;
+        IndexingStatus.Subscribe(OnIndexStatus);
         OnIndexStatus();
         SyncIndexToggles();
         // tab switches unload/reload the pane: (re)subscribe on every Loaded so status and toggles stay live
         Loaded += (_, _) =>
         {
-            App.Index.StatusChanged -= OnIndexStatus; App.Index.StatusChanged += OnIndexStatus;
-            App.Content.StatusChanged -= OnIndexStatus; App.Content.StatusChanged += OnIndexStatus;
-            App.ThumbPass.StatusChanged -= OnIndexStatus; App.ThumbPass.StatusChanged += OnIndexStatus;
+            IndexingStatus.Unsubscribe(OnIndexStatus); IndexingStatus.Subscribe(OnIndexStatus);
             App.IndexControlChanged -= SyncIndexToggles; App.IndexControlChanged += SyncIndexToggles;
             OnIndexStatus(); SyncIndexToggles();
         };
         Unloaded += (_, _) => App.IndexControlChanged -= SyncIndexToggles;
         Loaded += (_, _) => { UpdateNavSelection(); if (AppSettings.Current.Explorer.ShowPreviewPane) { PreviewToggle.IsChecked = true; TogglePreview(true); } if (!AppSettings.Current.Explorer.ShowNavigationPane) { NavToggle.IsChecked = false; ToggleNav(false); } };
-        Unloaded += (_, _) => { App.Index.StatusChanged -= OnIndexStatus; App.Content.StatusChanged -= OnIndexStatus; App.ThumbPass.StatusChanged -= OnIndexStatus; };
+        Unloaded += (_, _) => IndexingStatus.Unsubscribe(OnIndexStatus);
     }
 
     private void OnIndexStatus()
     {
-        Dispatcher.BeginInvoke(() =>
-        {
-            // while file contents are being read (first run, a repair, a big change), say so next to the name index
-            string content = App.Content.StatusText;
-            bool busy = App.Content.IsRunning || content.StartsWith("Repairing") || content.StartsWith("Upgrading");
-            IndexStatusText.Text = "Index: " + App.Index.StatusText + (busy ? " · " + content : "")
-                + (App.ThumbPass.IsRunning ? " · " + App.ThumbPass.StatusText : "");
-        });
+        Dispatcher.BeginInvoke(() => IndexStatusText.Text = IndexingStatus.Compact);
     }
 
     private void SyncIndexToggles()
