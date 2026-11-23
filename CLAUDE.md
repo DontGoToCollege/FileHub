@@ -6,7 +6,7 @@ FileHub lives at `%USERPROFILE%\Music\Claude\Projects\FileHub` (solution root; p
 
 - Target `net8.0-windows`, WPF + WinForms (tray icon only; WinForms/Drawing implicit usings are removed in the csproj to avoid type ambiguity).
 - Publish with `.\publish.ps1` → `dist\FileHub.exe` (self-contained single file, ~68 MB, ReadyToRun). Machine has SDK 10 with the 8.0 runtime pack cached.
-- Data in `%LocalAppData%\FileHub` (settings.json, index.fhdb snapshot, meta.db SQLite with FTS5, logs\).
+- Data in `FileHub-Data\` next to the exe (since 0.3.8; here the project root, git-ignored): settings.json, index.fhdb snapshot, meta.db SQLite with FTS5, logs\. Older versions used `%LocalAppData%\FileHub`, moved over on first start. Claude's tools see a stale sandboxed copy of `%LocalAppData%` (Claude package `LocalCache\Local`), not the real folder. Run a debug build against real data with env `FILEHUB_DATA=<dir>` (else it makes `bin\...\FileHub-Data`).
 - Index of this machine: ~618k entries, full crawl ≈23 s, snapshot load ≈0.3 s.
 - Default hub hotkey Ctrl+Alt+Space fails to register on this machine (taken by another app); user can change it in Settings.
 - Smoke-test technique that works: launch exe, then capture windows with `PrintWindow(hwnd, hdc, 2)` via PowerShell Add-Type (CopyFromScreen gives garbage for the WPF window). Close it with `FileHub.exe --exit` before republishing and restart it with `--tray` (a launch with no arguments opens an Explorer window in front, taking the owner's focus) (graceful: since 0.3.1 it saves the index on exit; plain `taskkill` without /F does nothing to it, /F loses unsaved live changes).
@@ -16,7 +16,7 @@ FileHub lives at `%USERPROFILE%\Music\Claude\Projects\FileHub` (solution root; p
 - User wants minimal, targeted changes per iteration; preserve existing design/behavior.
 - User runs StartIsBack; Claude desktop owns Ctrl+Alt+Space (FileHub's LL keyboard hook now captures it first).
 - `Slow folder load` lines in the log (>400 ms) identify slow Explorer navigations.
-- Never open the live `meta.db` read-write from a script while FileHub runs (a Bash-tool read on 2026-11-22 likely corrupted it; the Bash view of `%LocalAppData%FileHub` can also be stale). Inspect a copy, or use `?mode=ro&immutable=1`. Since 0.3.0 the FTS rowid equals the `content_meta`/`props` rowid (`PRAGMA user_version` 1).
+- Never open the live `meta.db` read-write from a script while FileHub runs (a Bash-tool read on 2026-11-22 likely corrupted it; the Claude app's view of `%LocalAppData%` is a stale sandboxed copy). Inspect a copy, or use `?mode=ro&immutable=1`. Since 0.3.0 the FTS rowid equals the `content_meta`/`props` rowid (`PRAGMA user_version` 1).
 
 **Why:** the user wants feedback-driven iteration on this app; knowing the layout and the validation recipe avoids re-deriving it.
 **How to apply:** for follow-up requests, edit under `src\FileHub`, rebuild with `dotnet build`, republish with publish.ps1, smoke-test with PrintWindow captures. See user-testing-preference.

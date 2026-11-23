@@ -28,7 +28,8 @@ public sealed class ShellImaging
     /// <summary>Cache key for an item: generic per-extension for ordinary files, per-path for folders, executables, shortcuts and thumbnails.</summary>
     public static string KeyFor(string path, bool isDirectory, int size, bool thumbnail)
     {
-        if (isDirectory) return "d|" + size + "|" + path;
+        // folders in icon views get Windows' content-preview thumbnail (pictures peeking out), like Explorer
+        if (isDirectory) return (thumbnail ? "t|" : "d|") + size + "|" + path;
         string ext = FileTypes.ExtensionOf(path);
         if (thumbnail && FileTypes.HasThumbnail(ext)) return "t|" + size + "|" + path;
         if (ext.Equals("exe", StringComparison.OrdinalIgnoreCase) || ext.Equals("lnk", StringComparison.OrdinalIgnoreCase) || ext.Equals("ico", StringComparison.OrdinalIgnoreCase)

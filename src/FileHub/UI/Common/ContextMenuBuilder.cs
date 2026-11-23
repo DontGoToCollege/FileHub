@@ -20,6 +20,22 @@ public static class ContextMenuBuilder
     private static readonly HashSet<string> DedupeLabels = new(StringComparer.OrdinalIgnoreCase)
     { "Open", "Cut", "Copy", "Paste", "Delete", "Rename", "Properties", "Refresh", "View", "Sort by", "Group by", "Paste shortcut", "Undo", "Open in new tab", "Open in new window", "Open in Terminal", "Copy as path" };
 
+    /// <summary>Sort by choices shared by the toolbar Sort menu and the right-click menu.</summary>
+    public static readonly (string Label, string Key)[] SortKeys =
+        { ("Name", "Name"), ("Date", "Date"), ("Date modified", "Modified"), ("Type", "Type"), ("Size", "Size"), ("Date created", "Created") };
+
+    /// <summary>"Sort options" submenu: whether sort changes stick to this folder or apply to all folders.</summary>
+    public static MenuItem SortOptionsMenu(Action<string> command)
+    {
+        bool all = AppSettings.Current.Explorer.SortAllFolders;
+        var opts = new MenuItem { Header = "Sort options" };
+        var folder = new MenuItem { Header = "Remember sort for each folder", IsChecked = !all }; folder.Click += (_, _) => command("sortscope:folder"); opts.Items.Add(folder);
+        var every = new MenuItem { Header = "Use the same sort for all folders", IsChecked = all }; every.Click += (_, _) => command("sortscope:all"); opts.Items.Add(every);
+        opts.Items.Add(new Separator());
+        var reset = new MenuItem { Header = "Reset this folder to the default sort", IsEnabled = !all }; reset.Click += (_, _) => command("sortreset"); opts.Items.Add(reset);
+        return opts;
+    }
+
     public static ContextMenu Build(FrameworkElement owner, IReadOnlyList<FileItem> items, string? folder, Action<string> command)
     {
         var s = AppSettings.Current.ContextMenu;
@@ -47,10 +63,12 @@ public static class ContextMenuBuilder
             { var mi = new MenuItem { Header = label }; mi.Click += (_, _) => command("view:" + mode); view.Items.Add(mi); }
             menu.Items.Add(view);
             var sort = new MenuItem { Header = "Sort by" };
-            foreach (var key in new[] { "Name", "Modified", "Type", "Size", "Created" })
-            { var mi = new MenuItem { Header = key == "Modified" ? "Date modified" : key == "Created" ? "Date created" : key }; mi.Click += (_, _) => command("sort:" + key); sort.Items.Add(mi); }
+            foreach (var (label, key) in SortKeys)
+            { var mi = new MenuItem { Header = label }; mi.Click += (_, _) => command("sort:" + key); sort.Items.Add(mi); }
             sort.Items.Add(new Separator());
             foreach (var (l, c) in new[] { ("Ascending", "sortdir:asc"), ("Descending", "sortdir:desc") }) { var mi = new MenuItem { Header = l }; mi.Click += (_, _) => command(c); sort.Items.Add(mi); }
+            sort.Items.Add(new Separator());
+            sort.Items.Add(SortOptionsMenu(command));
             menu.Items.Add(sort);
             Add("Refresh", "refresh", "F5");
             menu.Items.Add(new Separator());

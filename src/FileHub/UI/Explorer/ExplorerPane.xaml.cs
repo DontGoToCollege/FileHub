@@ -259,14 +259,28 @@ public partial class ExplorerPane : UserControl
     private void Sort_Click(object sender, RoutedEventArgs e)
     {
         var menu = new ContextMenu();
-        foreach (var (label, key) in new[] { ("Name", "Name"), ("Date modified", "Modified"), ("Type", "Type"), ("Size", "Size"), ("Date created", "Created") })
+        foreach (var (label, key) in ContextMenuBuilder.SortKeys)
         {
-            var mi = new MenuItem { Header = label, IsChecked = Tab.SortBy == key }; var k = key; mi.Click += (_, _) => Tab.SetSort(k, Tab.SortDescending); menu.Items.Add(mi);
+            var mi = new MenuItem { Header = label, IsChecked = Tab.SortBy == key }; var k = key; mi.Click += (_, _) => PickSort(k); menu.Items.Add(mi);
         }
         menu.Items.Add(new Separator());
         var asc = new MenuItem { Header = "Ascending", IsChecked = !Tab.SortDescending }; asc.Click += (_, _) => Tab.SetSort(Tab.SortBy, false); menu.Items.Add(asc);
         var desc = new MenuItem { Header = "Descending", IsChecked = Tab.SortDescending }; desc.Click += (_, _) => Tab.SetSort(Tab.SortBy, true); menu.Items.Add(desc);
+        menu.Items.Add(new Separator());
+        menu.Items.Add(ContextMenuBuilder.SortOptionsMenu(Execute));
         OpenFlyout(menu, (FrameworkElement)sender);
+    }
+
+    /// <summary>Picking the current sort again flips its order (like clicking a column header); another sort keeps the order.</summary>
+    private void PickSort(string key)
+        => Tab.SetSort(key, string.Equals(Tab.SortBy, key, StringComparison.OrdinalIgnoreCase) ? !Tab.SortDescending : Tab.SortDescending);
+
+    private void SetSortScope(bool allFolders)
+    {
+        var ex = AppSettings.Current.Explorer;
+        ex.SortAllFolders = allFolders;
+        if (allFolders) { ex.DefaultSortBy = Tab.SortBy; ex.DefaultSortDescending = Tab.SortDescending; }   // the sort you're looking at becomes everyone's
+        AppSettings.Current.Save();
     }
 
     private void View_Click(object sender, RoutedEventArgs e)
@@ -514,9 +528,11 @@ public partial class ExplorerPane : UserControl
             case "zoomout": ZoomView(-1); break;
             default:
                 if (cmd.StartsWith("view:") && Enum.TryParse<ViewMode>(cmd[5..], out var vm)) Tab.SetView(vm);
-                else if (cmd.StartsWith("sort:")) Tab.SetSort(cmd[5..], Tab.SortDescending);
+                else if (cmd.StartsWith("sort:")) PickSort(cmd[5..]);
                 else if (cmd == "sortdir:asc") Tab.SetSort(Tab.SortBy, false);
                 else if (cmd == "sortdir:desc") Tab.SetSort(Tab.SortBy, true);
+                else if (cmd == "sortscope:folder" || cmd == "sortscope:all") SetSortScope(cmd == "sortscope:all");
+                else if (cmd == "sortreset") { var ex = AppSettings.Current.Explorer; Tab.SetSort(ex.DefaultSortBy, ex.DefaultSortDescending); }
                 break;
         }
     }

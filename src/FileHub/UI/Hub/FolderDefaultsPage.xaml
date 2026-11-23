@@ -19,7 +19,7 @@
                         <TextBlock Grid.Row="1" Text="Sort by" VerticalAlignment="Center"/>
                         <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Margin="0,3">
                             <ComboBox x:Name="SortCombo" Width="220">
-                                <ComboBoxItem Content="Name" Tag="Name"/><ComboBoxItem Content="Date modified" Tag="Modified"/><ComboBoxItem Content="Type" Tag="Type"/><ComboBoxItem Content="Size" Tag="Size"/><ComboBoxItem Content="Date created" Tag="Created"/>
+                                <ComboBoxItem Content="Name" Tag="Name"/><ComboBoxItem Content="Date" Tag="Date"/><ComboBoxItem Content="Date modified" Tag="Modified"/><ComboBoxItem Content="Type" Tag="Type"/><ComboBoxItem Content="Size" Tag="Size"/><ComboBoxItem Content="Date created" Tag="Created"/>
                             </ComboBox>
                             <CheckBox x:Name="SortDesc" Content="Descending" Margin="12,0,0,0"/>
                         </StackPanel>

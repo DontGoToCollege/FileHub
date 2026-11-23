@@ -11,3 +11,5 @@ obj/
 *.user
 __pycache__/
 .claude/handoffs/
+
+FileHub-Data/

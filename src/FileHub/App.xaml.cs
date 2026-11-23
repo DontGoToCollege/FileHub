@@ -50,6 +50,7 @@ public partial class App : Application
             Shutdown();
             return;
         }
+        Paths.MoveLegacyData();
 
         DispatcherUnhandledException += (_, ex) =>
         {

@@ -297,8 +297,12 @@ public sealed class ExplorerTab : ObservableObject
     {
         bool foldersFirst = AppSettings.Current.Explorer.FoldersFirst;
         int sign = sortDesc ? -1 : 1;
+        // "Date" like Explorer's: when a photo was taken, otherwise when the item was last modified
+        var taken = sortBy == "Date" ? App.Db.GetDatesTaken(items.Where(i => !i.IsDirectory && !i.IsVirtual).Select(i => i.FullPath).ToList()) : null;
+        DateTime DateOf(FileItem i) => taken != null && taken.TryGetValue(i.FullPath, out var d) ? d : i.ModifiedUtc;
         Comparison<FileItem> cmp = sortBy switch
         {
+            "Date" => (a, b) => DateOf(a).CompareTo(DateOf(b)),
             "Modified" => (a, b) => a.ModifiedUtc.CompareTo(b.ModifiedUtc),
             "Created" => (a, b) => a.CreatedUtc.CompareTo(b.CreatedUtc),
             "Size" => (a, b) => a.Size.CompareTo(b.Size),
@@ -321,6 +325,8 @@ public sealed class ExplorerTab : ObservableObject
         if (descending == null) _sortDesc = string.Equals(key, _sortBy, StringComparison.OrdinalIgnoreCase) ? !_sortDesc : false;
         else _sortDesc = descending.Value;
         _sortBy = key;
+        var ex = AppSettings.Current.Explorer;
+        if (ex.SortAllFolders) { ex.DefaultSortBy = key; ex.DefaultSortDescending = _sortDesc; AppSettings.Current.Save(); }
         OnPropertyChanged(nameof(SortBy)); OnPropertyChanged(nameof(SortDescending));
         var items = _items.ToList();
         SortItems(items);
@@ -343,7 +349,10 @@ public sealed class ExplorerTab : ObservableObject
         try
         {
             var json = App.Db.GetFolderView(path);
-            return json != null ? JsonSerializer.Deserialize<FolderView>(json) : null;
+            var fv = json != null ? JsonSerializer.Deserialize<FolderView>(json) : null;
+            var ex = AppSettings.Current.Explorer;
+            if (fv != null && ex.SortAllFolders) { fv.SortBy = ex.DefaultSortBy; fv.SortDescending = ex.DefaultSortDescending; }   // one sort for every folder
+            return fv;
         }
         catch (Exception e) { Log.Warn("Folder view load failed: " + e.Message); return null; }
     }

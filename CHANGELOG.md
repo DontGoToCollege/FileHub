@@ -2,6 +2,22 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.8
+
+### New
+- **Folders show what's inside them** in Medium, Large and Extra large icons views, like Windows Explorer: pictures and
+  videos peek out of the folder.
+- **"Date" sort option:** sorts photos by when they were taken and everything else by date modified.
+- **Sort options** at the bottom of Sort by (toolbar and right-click menu): remember the sort for each folder (as
+  before), or use the same sort for all folders, plus "Reset this folder to the default sort".
+- **FileHub keeps its data next to the program**, in a `FileHub-Data` folder beside `FileHub.exe`, instead of
+  `%LocalAppData%\FileHub`. The old folder is moved there the first time this version starts. (If the program's folder
+  can't be written to, or the move fails, it keeps using the old folder.)
+
+### Bug fixes
+- **Picking the current sort again flips its order** (A→Z ↔ Z→A), like clicking a column header, instead of needing
+  Ascending/Descending.
+
 ## 0.3.7
 
 ### Bug fixes

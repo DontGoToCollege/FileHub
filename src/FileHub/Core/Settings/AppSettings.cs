@@ -124,6 +124,8 @@ public sealed class ExplorerSettings : SettingsBase
     public ViewMode DefaultView { get => _defaultView; set => Set(ref _defaultView, value); }
     public string DefaultSortBy { get; set; } = "Name";
     public bool DefaultSortDescending { get; set; }
+    /// <summary>Sort changes apply to every folder (the default sort) instead of being remembered per folder.</summary>
+    public bool SortAllFolders { get; set; }
     public List<ColumnSpec> DefaultColumns { get; set; } = new()
     {
         new() { Key = "Name", Width = 340 }, new() { Key = "Modified", Width = 150 }, new() { Key = "Type", Width = 150 }, new() { Key = "Size", Width = 90 }

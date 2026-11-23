@@ -23,7 +23,7 @@ or `dotnet build src\FileHub\FileHub.csproj` for a debug build.
 
 | Area | What it does today |
 |------|--------------------|
-| **Index** (`Core/Indexing`) | Crawls every fixed drive with the Win32 large-fetch enumerator into a flat in-memory index (name, parent, size, dates, attributes). Persisted as a binary snapshot (`%LocalAppData%\FileHub\index.fhdb`) so it is searchable instantly on the next start; rebuilt in the background when stale. FileSystemWatchers apply live changes. |
+| **Index** (`Core/Indexing`) | Crawls every fixed drive with the Win32 large-fetch enumerator into a flat in-memory index (name, parent, size, dates, attributes). Persisted as a binary snapshot (`FileHub-Data\index.fhdb` next to the exe) so it is searchable instantly on the next start; rebuilt in the background when stale. FileSystemWatchers apply live changes. |
 | **Database** (`Core/Database`) | SQLite `meta.db`: FTS5 full-text of file contents (text/code/Office XML), extracted Windows properties (title, author, dimensions, duration, camera…), thumbnail cache (PNG blobs), per-folder view settings. |
 | **Search** (`Core/Search`) | Everything-style query language: AND/OR/NOT/groups, wildcards, regex, `ext:` `type:` `size:` `dm:` `dc:` `path:` `infolder:` `parent:` `content:` `meta:` `attrib:` `startwith:` `endwith:` `case:` `ww:` `len:` `empty:`. Parallel scan of the index, live as you type. |
 | **Shell integration** (`Core/Shell`) | Real Windows context menu (`IContextMenu`) rendered inside WPF menus, icons/thumbnails via `IShellItemImageFactory`, copy/move/delete/rename through `SHFileOperation` (progress UI, undo, recycle bin), clipboard cut/copy/paste compatible with Explorer, Open-with / Properties dialogs, Windows property store reader. |
@@ -46,7 +46,7 @@ FileHub.exe --exit          stop the running instance
 
 ## Data locations
 
-`%LocalAppData%\FileHub\` — `settings.json`, `index.fhdb`, `meta.db`, `logs\`.
+`FileHub-Data\` next to `FileHub.exe` (older versions: `%LocalAppData%\FileHub`, moved on first start) — `settings.json`, `index.fhdb`, `meta.db`, `logs\`.
 
 ## Known limitations of this first shell
 

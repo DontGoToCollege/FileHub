@@ -200,6 +200,31 @@ public sealed class MetaDb : IDisposable
         return cmd.ExecuteScalar() as string;
     }
 
+    /// <summary>Photo "date taken" (UTC) for those of the paths the metadata indexer has one for.</summary>
+    public Dictionary<string, DateTime> GetDatesTaken(IReadOnlyList<string> paths)
+    {
+        var result = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            using var c = Open();
+            for (int i = 0; i < paths.Count; i += 500)
+            {
+                var chunk = paths.Skip(i).Take(500).ToList();
+                using var cmd = c.CreateCommand();
+                cmd.CommandText = "SELECT path, json_extract(json, '$.DateTaken') FROM props WHERE path IN (" + string.Join(",", chunk.Select((_, k) => "$p" + k)) + ") AND instr(json, 'DateTaken') > 0";
+                for (int k = 0; k < chunk.Count; k++) cmd.Parameters.AddWithValue("$p" + k, chunk[k]);
+                using var r = cmd.ExecuteReader();
+                // stored as the shell formats a FILETIME: "2018/09/25:22:32:40.000" (UTC)
+                while (r.Read())
+                    if (!r.IsDBNull(1) && DateTime.TryParseExact(r.GetString(1), "yyyy/MM/dd:HH:mm:ss.fff", System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var d))
+                        result[r.GetString(0)] = d;
+            }
+        }
+        catch (Exception ex) { Log.Warn("Date taken lookup failed: " + ex.Message); }
+        return result;
+    }
+
     /// <summary>Full-text search over file contents (and optionally extracted properties). Returns matching paths.</summary>
     public List<string> SearchContent(string userQuery, int limit, bool includeProps = true)
     {
