@@ -14,6 +14,8 @@ public sealed class SearchResult
     public string? Error { get; init; }
     /// <summary>The query searched file contents and the ids are in best-match order (your documents first).</summary>
     public bool Ranked { get; init; }
+    /// <summary>Where the content-only matches added by IncludeContent start in Ids (Ids.Length when there are none).</summary>
+    public int ContentFrom { get; init; }
     public bool Truncated => Ids.Length < TotalMatches;
 }
 
@@ -108,24 +110,32 @@ public sealed class SearchEngine
             else
                 Array.Sort(all, cmp);
         }
-        else if (parsed.ContentRank is { Count: > 0 } rank && all.Length > 1)
+        int nameHits = all.Length;
+        if (options.Sort == SortKey.None && parsed.ContentRank is { Count: > 0 } rank && all.Length > 0)
         {
             // no sort chosen: content searches list the best matches first, not in disk order
             // your own documents before program files and code libraries that happen to mention the word
+            // with IncludeContent, name matches stay first in disk order and the content-only matches follow
+            var nameRoot = parsed.NameRoot;
             var key = new long[all.Length];
+            nameHits = 0;
             for (int k = 0; k < all.Length; k++)
             {
-                string p = index.PathOf(all[k]);
+                string? p = null;
+                if (nameRoot != null && nameRoot.Match(index, all[k], ref entries[all[k]], ref p)) { key[k] = k; nameHits++; continue; }
+                p ??= index.PathOf(all[k]);
                 // within each place: documents (txt, md, docx, pdf…) before source code
                 int group = PlaceTier(p) * 2 + (FileTypes.IsIn("document", FileTypes.ExtensionOf(p)) ? 0 : 1);
-                key[k] = (long)group << 32 | (uint)(rank.TryGetValue(p, out int r) ? r : int.MaxValue);
+                key[k] = 1L << 40 | (long)group << 32 | (uint)(rank.TryGetValue(p, out int r) ? r : int.MaxValue);
             }
+            if (nameRoot == null) nameHits = all.Length;
             Array.Sort(key, all);
         }
 
         var ids = all.Length > options.MaxResults ? all[..options.MaxResults] : all;
         return new SearchResult { Index = index, Ids = ids, TotalMatches = total, Elapsed = sw.Elapsed, Error = parsed.Error,
-            Ranked = options.Sort == SortKey.None && parsed.ContentRank is { Count: > 0 } };
+            Ranked = options.Sort == SortKey.None && parsed.ContentRank is { Count: > 0 } && parsed.NameRoot == null,
+            ContentFrom = Math.Min(nameHits, ids.Length) };
     }
 
     public static IComparer<int> MakeComparer(FileIndex index, SortKey key, bool desc)
@@ -184,7 +194,7 @@ public sealed class SearchEngine
         var entries = index.Entries;
         string q = query.Trim();
         var scored = new List<(int id, int score)>(Math.Min(result.Ids.Length, 20000));
-        int limit = Math.Min(result.Ids.Length, 20000);
+        int limit = Math.Min(result.ContentFrom, 20000);   // name matches only; content-only matches are merged in by the caller
         for (int i = 0; i < limit; i++)
         {
             int id = result.Ids[i];

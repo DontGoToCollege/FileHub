@@ -339,7 +339,15 @@ public sealed class IndexService : IDisposable
     {
         try
         {
-            if (index.FindByPath(path) >= 0) return;
+            int existing = index.FindByPath(path);
+            if (existing >= 0)
+            {
+                // already listed (a re-created file, or a snapshot older than the change): refresh it and re-read its contents
+                bool dir = index[existing].IsDirectory;
+                if (!dir && File.Exists(path)) { var f = new FileInfo(path); index.Update(existing, f.Length, f.LastWriteTimeUtc.Ticks, f.Attributes); }
+                FileChanged?.Invoke(path, dir);
+                return;
+            }
             string? parentPath = Path.GetDirectoryName(path);
             if (parentPath == null) return;
             int parent = index.FindDirectory(parentPath);

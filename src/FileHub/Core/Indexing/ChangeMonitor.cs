@@ -48,7 +48,19 @@ public sealed class ChangeMonitor : IDisposable
     {
         // FileHub's own database / thumbnail cache / log writes would otherwise feed back into the indexer
         if (c.Path.StartsWith(OwnDataDir, StringComparison.OrdinalIgnoreCase)) return;
+        // the watcher sometimes reports 8.3 short names (MASTER~1.XML); those would be added as duplicate entries
+        if (c.Path.Contains('~')) c = c with { Path = LongPath(c.Path) };
         _channel.Writer.TryWrite(c);
+    }
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern uint GetLongPathName(string shortPath, System.Text.StringBuilder longPath, uint size);
+
+    private static string LongPath(string path)
+    {
+        var sb = new System.Text.StringBuilder(1024);
+        uint n = GetLongPathName(path, sb, (uint)sb.Capacity);
+        return n > 0 && n < sb.Capacity ? sb.ToString() : path;   // 0 = already gone; keep the reported path
     }
 
     public void Stop()

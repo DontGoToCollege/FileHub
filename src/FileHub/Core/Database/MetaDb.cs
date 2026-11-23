@@ -249,10 +249,12 @@ public sealed class MetaDb : IDisposable
         {
             using var c = Open();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var table in includeProps ? new[] { "content_fts", "props_fts" } : new[] { "content_fts" })
+            foreach (var (table, meta) in includeProps ? new[] { ("content_fts", "content_meta"), ("props_fts", "props") } : new[] { ("content_fts", "content_meta") })
             {
                 using var cmd = c.CreateCommand();
-                cmd.CommandText = $"SELECT path FROM {table} WHERE {table} MATCH $q ORDER BY rank LIMIT $n";
+                // the path comes from the meta table (same rowid): reading it from the FTS row loads each file's whole
+                // stored text, which made a content search take 0.2–2 s instead of 10–500 ms
+                cmd.CommandText = $"SELECT m.path FROM (SELECT rowid AS r, rank AS rk FROM {table} WHERE {table} MATCH $q ORDER BY rank LIMIT $n) x JOIN {meta} m ON m.rowid = x.r ORDER BY x.rk";
                 cmd.Parameters.AddWithValue("$q", match);
                 cmd.Parameters.AddWithValue("$n", limit);
                 using var r = cmd.ExecuteReader();

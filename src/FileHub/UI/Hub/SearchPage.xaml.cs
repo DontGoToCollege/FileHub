@@ -136,6 +136,7 @@ public partial class SearchPage : UserControl
         {
             MaxResults = s.MaxResults, RegexMode = s.RegexMode, MatchCase = s.MatchCase, WholeWord = s.WholeWord, MatchPath = s.MatchPath,
             TypeFilter = _typeFilter.Length > 0 ? _typeFilter : null, Sort = _sort, SortDescending = _desc,
+            IncludeContent = AppSettings.Current.Index.ContentIndexing,
         };
         Busy.Visibility = Visibility.Visible;
         Task.Run(() =>

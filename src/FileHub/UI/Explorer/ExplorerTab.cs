@@ -424,7 +424,7 @@ public sealed class ExplorerTab : ObservableObject
         var options = new SearchOptions
         {
             MaxResults = s.MaxResults, RegexMode = s.RegexMode, MatchCase = s.MatchCase, WholeWord = s.WholeWord, MatchPath = s.MatchPath,
-            ScopePath = IsVirtual ? null : _path, Sort = SortKey.None,
+            ScopePath = IsVirtual ? null : _path, Sort = SortKey.None, IncludeContent = AppSettings.Current.Index.ContentIndexing,
         };
         try
         {
@@ -433,8 +433,12 @@ public sealed class ExplorerTab : ObservableObject
             var items = new List<FileItem>(result.Ids.Length);
             foreach (var id in result.Ids) items.Add(FileItem.FromEntry(result.Index, id));
             // content searches keep the best-match order (like Explorer's search results by relevance);
-            // picking a sort while searching still re-sorts them
-            if (!IsVirtual && !result.Ranked) SortItems(items);
+            // picking a sort while searching still re-sorts them; name matches sort by the folder's sort, content matches stay after them
+            if (!IsVirtual && !result.Ranked)
+            {
+                if (result.ContentFrom >= items.Count) SortItems(items);
+                else { var names = items.GetRange(0, result.ContentFrom); SortItems(names); items.RemoveRange(0, names.Count); items.InsertRange(0, names); }
+            }
             Items = items;
             Status = result.Truncated
                 ? $"{result.TotalMatches:N0} results (showing {result.Ids.Length:N0}) · {result.Elapsed.TotalMilliseconds:F0} ms"

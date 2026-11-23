@@ -39,7 +39,8 @@ public sealed class ContentIndexer : IDisposable
     {
         _index = index; _db = db; _settings = settings;
         _index.IndexChanged += () => RequestFullPass();
-        _index.FileChanged += (path, isDir) => { if (!isDir) _changed.Writer.TryWrite(path); };
+        // folders too: a folder created, moved or renamed brings files whose contents aren't indexed under that path yet
+        _index.FileChanged += (path, isDir) => _changed.Writer.TryWrite(path);
     }
 
     public bool Paused
@@ -78,9 +79,7 @@ public sealed class ContentIndexer : IDisposable
                 if (!_settings.Index.ContentIndexing && !_settings.Index.MetadataIndexing) { Thread.Sleep(2000); continue; }
 
                 // individual changed files first
-                var changedBatch = new List<string>();
-                while (changedBatch.Count < 200 && _changed.Reader.TryRead(out var p)) changedBatch.Add(p);
-                if (changedBatch.Count > 0) { ProcessPaths(changedBatch.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), ct); continue; }
+                if (DrainChanged(ct)) continue;
 
                 if (_fullPassRequested || (DateTime.UtcNow - lastPass).TotalMinutes > 30)
                 {
@@ -95,6 +94,16 @@ public sealed class ContentIndexer : IDisposable
             catch (OperationCanceledException) { return; }
             catch (Exception ex) { Log.Error("Content indexer loop error", ex); Thread.Sleep(5000); }
         }
+    }
+
+    /// <summary>Indexes up to 200 queued changed files/folders; false when nothing was queued.</summary>
+    private bool DrainChanged(CancellationToken ct)
+    {
+        var changedBatch = new List<string>();
+        while (changedBatch.Count < 200 && _changed.Reader.TryRead(out var p)) changedBatch.Add(p);
+        if (changedBatch.Count == 0) return false;
+        ProcessPaths(changedBatch.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), ct);
+        return true;
     }
 
     private void FullPass(CancellationToken ct)
@@ -158,7 +167,18 @@ public sealed class ContentIndexer : IDisposable
             Processed++;
             if (contentBatch.Count >= 100) { _db.UpsertContentBatch(contentBatch); contentBatch.Clear(); }
             if (propsBatch.Count >= 200) { _db.UpsertPropsBatch(propsBatch); propsBatch.Clear(); }
-            if (++sinceReport >= 250) { sinceReport = 0; Status($"Indexing content {Processed:N0} / {Candidates:N0}"); Thread.Sleep(5); }
+            if (++sinceReport >= 250)
+            {
+                sinceReport = 0; Status($"Indexing content {Processed:N0} / {Candidates:N0}"); Thread.Sleep(5);
+                // a long pass (first run, 40k+ files) must not hold up files saved meanwhile; flush first so this pass's
+                // older extracts can't overwrite the fresh ones
+                if (_changed.Reader.TryPeek(out _))
+                {
+                    if (contentBatch.Count > 0) { _db.UpsertContentBatch(contentBatch); contentBatch.Clear(); }
+                    if (propsBatch.Count > 0) { _db.UpsertPropsBatch(propsBatch); propsBatch.Clear(); }
+                    DrainChanged(ct);   // one batch per checkpoint, so a noisy disk can't stall the pass either
+                }
+            }
         }
         if (contentBatch.Count > 0) _db.UpsertContentBatch(contentBatch);
         if (propsBatch.Count > 0) _db.UpsertPropsBatch(propsBatch);
@@ -175,7 +195,7 @@ public sealed class ContentIndexer : IDisposable
         long maxBytes = Math.Max(1, _settings.Index.ContentMaxMB) * 1024L * 1024L;
         var contentBatch = new List<(string, long, long, string)>();
         var propsBatch = new List<(string, long, string, string)>();
-        foreach (var path in paths)
+        foreach (var path in ExpandFolders(paths, contentExts, metaExts))
         {
             ct.ThrowIfCancellationRequested();
             try
@@ -195,6 +215,23 @@ public sealed class ContentIndexer : IDisposable
         }
         if (contentBatch.Count > 0) _db.UpsertContentBatch(contentBatch);
         if (propsBatch.Count > 0) _db.UpsertPropsBatch(propsBatch);
+    }
+
+    /// <summary>Replaces each existing folder with the indexable files inside it; files and gone paths pass through.</summary>
+    private static IEnumerable<string> ExpandFolders(List<string> paths, HashSet<string> contentExts, HashSet<string> metaExts)
+    {
+        var opts = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint };
+        foreach (var path in paths)
+        {
+            if (!Directory.Exists(path)) { yield return path; continue; }
+            List<string> files;   // listed up front: a folder deleted mid-listing mustn't throw out of the whole batch
+            try { files = Directory.EnumerateFiles(path, "*", opts).ToList(); } catch { continue; }
+            foreach (var f in files)
+            {
+                string ext = FileTypes.ExtensionOf(Path.GetFileName(f));
+                if (contentExts.Contains(ext) || metaExts.Contains(ext)) yield return f;
+            }
+        }
     }
 
     // ------------------------------------------------------------------ extraction

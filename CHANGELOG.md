@@ -2,6 +2,23 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.15
+
+### Bug fixes
+- **Content search works from a plain search everywhere.** The Hub and Explorer only looked inside files when you
+  typed `content:`; now any plain search of 3+ characters also lists files whose contents match, after the file-name
+  matches (Explorer still sorts the name matches by the folder's sort). The Start menu (with "Also search file
+  contents" on) keeps at least a third of its list for content matches, so file names can't crowd them out, and
+  matches word beginnings like everywhere else.
+- **Files saved while the content indexer is busy are indexed right away.** During a long pass (the first run, or
+  the check every 30 minutes) changed files waited until the whole pass finished, which could take many minutes.
+- **Moved, renamed, copied or newly created folders get their contents indexed straight away** instead of at the
+  next 30-minute pass.
+- **Files an app re-creates while saving are re-read**, and short 8.3 names from Windows (`NEWTEX~1.TXT`) no
+  longer add duplicate entries.
+- **Content searches are about 25× faster** (e.g. 680 ms → 50 ms): the database no longer loads each matching
+  file's full text just to get its path.
+
 ## 0.3.14
 
 ### Bug fixes

@@ -24,6 +24,8 @@ public sealed class SearchOptions
     /// <summary>Callback used to resolve content:/meta: terms against the full-text database.</summary>
     public Func<string, int, List<string>>? ContentSearch { get; set; }
     public int ContentLimit { get; set; } = 20000;
+    /// <summary>Plain-word searches also list files whose contents match, after the name matches.</summary>
+    public bool IncludeContent { get; set; }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -180,16 +182,14 @@ public sealed class InFolderNode : QueryNode
 
 public sealed class PathSetNode : QueryNode
 {
-    private readonly HashSet<string> _paths;
-    public PathSetNode(IEnumerable<string> paths) => _paths = new HashSet<string>(paths, StringComparer.OrdinalIgnoreCase);
-    public override bool NeedsPath => true;
-    public int Count => _paths.Count;
-    public override bool Match(FileIndex index, int id, ref Entry e, ref string? path)
+    // resolved to ids once: building the path of every one of ~600k entries per search was the slow part
+    private readonly HashSet<int> _ids = new();
+    public PathSetNode(FileIndex index, IEnumerable<string> paths)
     {
-        if (_paths.Count == 0) return false;
-        path ??= index.PathOf(id);
-        return _paths.Contains(path);
+        foreach (var p in paths) { int id = index.FindByPath(p); if (id >= 0) _ids.Add(id); }
     }
+    public int Count => _ids.Count;
+    public override bool Match(FileIndex index, int id, ref Entry e, ref string? path) => _ids.Contains(id);
 }
 
 public sealed class EmptyNode : QueryNode
@@ -227,6 +227,8 @@ public static class QueryParser
         public int ContentMatches { get; init; }
         /// <summary>Path → position in the first content:/meta: term's best-match-first list (for ordering unsorted results).</summary>
         public IReadOnlyDictionary<string, int>? ContentRank { get; init; }
+        /// <summary>Set when IncludeContent added content matches: the name-only part of the query.</summary>
+        public QueryNode? NameRoot { get; init; }
         public string? Error { get; init; }
     }
 
@@ -236,6 +238,22 @@ public static class QueryParser
         try
         {
             var root = p.ParseExpression();
+            QueryNode? nameRoot = null;
+            // plain words only (no key:, operators or wildcards), 3+ characters so a one-letter prefix doesn't scan the whole FTS index
+            string plain = (text ?? "").Trim();
+            if (options.IncludeContent && options.ContentSearch != null && !options.RegexMode && !root.IsMatchAll
+                && plain.Length >= 3 && plain.IndexOfAny(new[] { ':', '|', '!', '(', ')', '*', '?' }) < 0)
+            {
+                var paths = options.ContentSearch(plain, options.ContentLimit);
+                if (paths.Count > 0)
+                {
+                    nameRoot = root;
+                    root = new OrNode(new[] { root, new PathSetNode(index, paths) });
+                    p.ContentMatches += paths.Count;
+                    p.ContentRank = new Dictionary<string, int>(paths.Count, StringComparer.OrdinalIgnoreCase);
+                    for (int k = 0; k < paths.Count; k++) p.ContentRank.TryAdd(paths[k], k);
+                }
+            }
             var extra = new List<QueryNode>();
             if (!root.IsMatchAll) extra.Add(root);
             if (!string.IsNullOrEmpty(options.ScopePath))
@@ -249,7 +267,7 @@ public static class QueryParser
                 extra.Add(new TypeNode(g));
             }
             QueryNode final = extra.Count == 0 ? TrueNode.Instance : extra.Count == 1 ? extra[0] : new AndNode(extra);
-            return new ParseResult { Root = final, HasContentTerm = p.HasContent, ContentMatches = p.ContentMatches, ContentRank = p.ContentRank };
+            return new ParseResult { Root = final, HasContentTerm = p.HasContent, ContentMatches = p.ContentMatches, ContentRank = p.ContentRank, NameRoot = nameRoot };
         }
         catch (Exception ex)
         {
@@ -429,7 +447,7 @@ public static class QueryParser
                 case "content": case "meta":
                 {
                     HasContent = true;
-                    if (_o.ContentSearch == null || value.Length == 0) return new PathSetNode(Array.Empty<string>());
+                    if (_o.ContentSearch == null || value.Length == 0) return new PathSetNode(_index, Array.Empty<string>());
                     var paths = _o.ContentSearch(value, _o.ContentLimit);
                     ContentMatches += paths.Count;
                     if (ContentRank == null)
@@ -437,7 +455,7 @@ public static class QueryParser
                         ContentRank = new Dictionary<string, int>(paths.Count, StringComparer.OrdinalIgnoreCase);
                         for (int k = 0; k < paths.Count; k++) ContentRank.TryAdd(paths[k], k);
                     }
-                    return new PathSetNode(paths);
+                    return new PathSetNode(_index, paths);
                 }
             }
             return BuildPlain(key + ":" + value, _o.RegexMode, _o.MatchCase, _o.WholeWord, _o.MatchPath);
