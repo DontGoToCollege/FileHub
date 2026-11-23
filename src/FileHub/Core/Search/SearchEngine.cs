@@ -202,16 +202,19 @@ public sealed class SearchEngine
     /// <summary>
     /// A name's first 8 characters as bytes, first in the top byte, so that keys order like <see cref="CompareNames"/>:
     /// letters upper-cased, 0 where the name ends, and the key stops at the first digit ('0': a number's value needs the
-    /// whole name) or non-ASCII character (0xFF: "can't tell").
+    /// whole name) or non-ASCII character: 0xFE, after every ASCII one (é, 한, Ж…), or 0xFF "can't tell" for the few
+    /// that upper-case to ASCII (ı → I) or are digits (٣).
     /// </summary>
     public static ulong NameKey(string s)
     {
         ulong key = 0;
         for (int i = 0; i < 8; i++)
         {
-            int b = i >= s.Length ? 0 : s[i] >= 128 ? 0xFF : char.IsAsciiDigit(s[i]) ? '0' : char.ToUpperInvariant(s[i]);
+            int b = i >= s.Length ? 0
+                : s[i] < 128 ? (char.IsAsciiDigit(s[i]) ? '0' : char.ToUpperInvariant(s[i]))
+                : char.IsDigit(s[i]) || char.ToUpperInvariant(s[i]) < 128 ? 0xFF : 0xFE;
             key |= (ulong)b << (56 - 8 * i);
-            if (b is 0 or 0xFF or '0') break;
+            if (b is 0 or 0xFE or 0xFF or '0') break;
         }
         return key;
     }

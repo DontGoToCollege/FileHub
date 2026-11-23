@@ -2,6 +2,14 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.20
+
+### Faster
+- **Sorting by name, Z to A, is as fast as A to Z.** Names that start with a non-English letter (한국어, Русский, é…)
+  come last in A to Z, so they come first in Z to A, and every comparison against them used to take the slow path.
+  Now the quick check knows those letters sort after English ones. All 785,000 results for "e", by name, either
+  direction: 73–88 ms in the Hub.
+
 ## 0.3.19
 
 ### Faster
