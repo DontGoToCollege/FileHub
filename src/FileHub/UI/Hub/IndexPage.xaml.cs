@@ -43,9 +43,9 @@ public partial class IndexPage : UserControl, ISavablePage, IRefreshablePage
         {
             try
             {
-                var st = App.Db.Stats(); long thumbs = App.Db.ThumbCount();
+                var st = App.Db.Stats(); long thumbs = App.Thumbs.Count(); string thumbSize = Core.Search.SizeRange.Format(App.Thumbs.FileSize);
                 var dbSize = new FileInfo(Paths.MetaDbFile) is { Exists: true } f ? Core.Search.SizeRange.Format(f.Length) : "0";
-                Dispatcher.BeginInvoke(() => ThumbStats.Text = $"{thumbs:N0} thumbnails · {st.contentRows:N0} documents · {st.propsRows:N0} metadata rows · database {dbSize}");
+                Dispatcher.BeginInvoke(() => ThumbStats.Text = $"{thumbs:N0} thumbnails ({thumbSize}) · {st.contentRows:N0} documents · {st.propsRows:N0} metadata rows · database {dbSize}");
             }
             catch { }
         });
@@ -73,7 +73,7 @@ public partial class IndexPage : UserControl, ISavablePage, IRefreshablePage
     private void Save_Click(object sender, RoutedEventArgs e) => _ = App.Index.SaveAsync().ContinueWith(_ => Dispatcher.BeginInvoke(RefreshPage));
     private void Rescan_Click(object sender, RoutedEventArgs e) { SavePage(); App.Content.RequestFullPass(); }
     private void OpenData_Click(object sender, RoutedEventArgs e) => Core.Shell.ShellUtil.Open(Paths.DataDir);
-    private void ClearThumbs_Click(object sender, RoutedEventArgs e) { Task.Run(() => { App.Db.ClearThumbs(); App.Imaging.ClearMemory(); }).ContinueWith(_ => Dispatcher.BeginInvoke(RefreshPage)); }
+    private void ClearThumbs_Click(object sender, RoutedEventArgs e) { Task.Run(() => { App.Thumbs.Clear(); App.Imaging.ClearMemory(); }).ContinueWith(_ => Dispatcher.BeginInvoke(RefreshPage)); }
     private void ClearContent_Click(object sender, RoutedEventArgs e)
     {
         if (MessageBox.Show("Delete all indexed file contents and metadata? They will be re-indexed in the background.", "FileHub", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;

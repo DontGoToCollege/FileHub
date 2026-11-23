@@ -11,11 +11,11 @@ namespace FileHub.Core.Shell;
 
 /// <summary>
 /// Icons and thumbnails via IShellItemImageFactory, with an in-memory LRU and a persistent PNG cache
-/// (thumbs table in meta.db) so thumbnails survive restarts like Windows' thumbcache.
+/// (thumbs.db, one 256 px image per file shown at every view size) so thumbnails survive restarts like Windows' thumbcache.
 /// </summary>
 public sealed class ShellImaging
 {
-    private readonly MetaDb _db;
+    private readonly ThumbDb _thumbs;
     private readonly Dictionary<string, BitmapSource> _mem = new(StringComparer.OrdinalIgnoreCase);
     private readonly LinkedList<string> _lru = new();
     private readonly object _lock = new();
@@ -23,7 +23,7 @@ public sealed class ShellImaging
     private static readonly Dictionary<string, string> _typeNames = new(StringComparer.OrdinalIgnoreCase);
     public bool DiskCacheEnabled { get; set; } = true;
 
-    public ShellImaging(MetaDb db) => _db = db;
+    public ShellImaging(ThumbDb thumbs) => _thumbs = thumbs;
 
     /// <summary>Cache key for an item: generic per-extension for ordinary files, per-path for folders, executables, shortcuts and thumbnails.</summary>
     public static string KeyFor(string path, bool isDirectory, int size, bool thumbnail)
@@ -65,46 +65,73 @@ public sealed class ShellImaging
         if (cached != null) return cached;
 
         bool isThumbKey = key[0] == 't';
-        if (isThumbKey && DiskCacheEnabled)
+        if (isThumbKey && DiskCacheEnabled && _thumbs.Get(path, modifiedTicks) is { } stored)
         {
-            try
-            {
-                var png = _db.GetThumb(key, modifiedTicks);
-                if (png != null)
-                {
-                    var bmp = Decode(png);
-                    if (bmp != null) { Put(key, bmp); return bmp; }
-                }
-            }
-            catch (Exception ex) { Log.Warn("Thumb cache read failed: " + ex.Message); }
+            // stored at 256 px and scaled to this view's size while decoding; empty = the file has no thumbnail: its icon
+            if (stored.Length == 0) isThumbKey = false;
+            else if (FromStream(new MemoryStream(stored), size, upright: false) is { } bmp) { Put(key, bmp); return bmp; }
         }
 
         BitmapSource? result = null;
-        if (isThumbKey && !isDirectory && WicExts.Contains(FileTypes.ExtensionOf(path))) result = FromWic(path, size);
-        if (isThumbKey) result ??= FromShell(path, size, Native.SIIGBF_THUMBNAILONLY | Native.SIIGBF_BIGGERSIZEOK);
+        if (isThumbKey)
+        {
+            var big = MakeThumb(path, isDirectory);
+            if (big != null) result = Fit(big, size);
+            if (DiskCacheEnabled)
+            {
+                // stored after the image is handed back, so the encode (~3 ms) doesn't delay it showing
+                long modified = modifiedTicks;
+                Task.Run(() =>
+                {
+                    try { _thumbs.Put(new[] { (path, modified, big == null ? Array.Empty<byte>() : Encode(big)) }); }
+                    catch (Exception ex) { Log.Warn("Thumbnail save failed: " + ex.Message); }
+                });
+            }
+        }
         result ??= FromShell(path, size, Native.SIIGBF_ICONONLY | Native.SIIGBF_BIGGERSIZEOK);
         result ??= FromShell(path, size, Native.SIIGBF_RESIZETOFIT);
         if (result == null) return null;
-
         Put(key, result);
-        if (isThumbKey && DiskCacheEnabled)
-        {
-            // saved after the image is handed back: the PNG encode (~4 ms) no longer delays it showing
-            var frozen = result;
-            Task.Run(() =>
-            {
-                try
-                {
-                    var enc = new PngBitmapEncoder();
-                    enc.Frames.Add(BitmapFrame.Create(frozen));
-                    using var ms = new MemoryStream();
-                    enc.Save(ms);
-                    _db.PutThumb(key, modifiedTicks, ms.ToArray());
-                }
-                catch (Exception ex) { Log.Warn("Thumb cache write failed: " + ex.Message); }
-            });
-        }
         return result;
+    }
+
+    /// <summary>
+    /// A file's or folder's thumbnail at up to 256 px (what thumbs.db stores), or null when it has none. The shell part
+    /// wants an STA thread.
+    /// </summary>
+    public static BitmapSource? MakeThumb(string path, bool isDirectory)
+    {
+        BitmapSource? b = null;
+        if (!isDirectory && WicExts.Contains(FileTypes.ExtensionOf(path))) b = FromWic(path, ThumbDb.Size);
+        b ??= FromShell(path, ThumbDb.Size, Native.SIIGBF_THUMBNAILONLY | Native.SIIGBF_BIGGERSIZEOK);
+        return b == null ? null : Fit(b, ThumbDb.Size);
+    }
+
+    /// <summary>Scaled down to fit a <paramref name="size"/> square (never up).</summary>
+    private static BitmapSource Fit(BitmapSource b, int size)
+    {
+        int max = Math.Max(b.PixelWidth, b.PixelHeight);
+        if (max <= size) return b;
+        double s = size / (double)max;
+        var t = new TransformedBitmap(b, new ScaleTransform(s, s));
+        t.Freeze();
+        return t;
+    }
+
+    /// <summary>For thumbs.db: JPEG (photos: 14 KB against 88 KB as PNG), or PNG when the image has see-through pixels.</summary>
+    public static byte[] Encode(BitmapSource b)
+    {
+        var bgra = b.Format == PixelFormats.Bgra32 || b.Format == PixelFormats.Pbgra32 ? b : new FormatConvertedBitmap(b, PixelFormats.Bgra32, null, 0);
+        int stride = bgra.PixelWidth * 4;
+        var px = new byte[stride * bgra.PixelHeight];
+        bgra.CopyPixels(px, stride, 0);
+        bool clear = false;
+        for (int i = 3; i < px.Length; i += 4) if (px[i] != 255) { clear = true; break; }
+        BitmapEncoder enc = clear ? new PngBitmapEncoder() : new JpegBitmapEncoder { QualityLevel = 85 };
+        enc.Frames.Add(BitmapFrame.Create(clear ? b : new FormatConvertedBitmap(b, PixelFormats.Bgr24, null, 0)));
+        using var ms = new MemoryStream();
+        enc.Save(ms);
+        return ms.ToArray();
     }
 
     private static readonly HashSet<string> WicExts = new(StringComparer.OrdinalIgnoreCase) { "jpg", "jpeg", "jpe", "jfif", "png", "bmp", "gif", "tif", "tiff", "webp" };
@@ -119,14 +146,24 @@ public sealed class ShellImaging
         try
         {
             using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            var frame = BitmapDecoder.Create(fs, BitmapCreateOptions.DelayCreation, BitmapCacheOption.None).Frames[0];
+            return FromStream(fs, size, upright: true);
+        }
+        catch { return null; }
+    }
+
+    /// <summary>An image decoded to fit a <paramref name="size"/> square (JPEGs scale while decoding), optionally turned upright from its camera tag.</summary>
+    private static BitmapSource? FromStream(Stream s, int size, bool upright)
+    {
+        try
+        {
+            var frame = BitmapDecoder.Create(s, BitmapCreateOptions.DelayCreation, BitmapCacheOption.None).Frames[0];
             int w = frame.PixelWidth, h = frame.PixelHeight;
             ushort orientation = 1;
-            try { if (frame.Metadata is BitmapMetadata m && m.GetQuery("System.Photo.Orientation") is ushort o) orientation = o; } catch { }
-            fs.Position = 0;
+            if (upright) try { if (frame.Metadata is BitmapMetadata m && m.GetQuery("System.Photo.Orientation") is ushort o) orientation = o; } catch { }
+            s.Position = 0;
             var bi = new BitmapImage();
             bi.BeginInit();
-            bi.StreamSource = fs;
+            bi.StreamSource = s;
             bi.CacheOption = BitmapCacheOption.OnLoad;
             if (w >= h) bi.DecodePixelWidth = Math.Min(size, w); else bi.DecodePixelHeight = Math.Min(size, h);
             // shortcut: mirrored EXIF orientations (2, 4, 5, 7, rare outside scanners) show unmirrored; add a flip if one turns up
@@ -134,19 +171,6 @@ public sealed class ShellImaging
             bi.EndInit();
             bi.Freeze();
             return bi;
-        }
-        catch { return null; }
-    }
-
-    private static BitmapSource? Decode(byte[] png)
-    {
-        try
-        {
-            using var ms = new MemoryStream(png);
-            var dec = new PngBitmapDecoder(ms, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
-            var f = dec.Frames[0];
-            f.Freeze();
-            return f;
         }
         catch { return null; }
     }

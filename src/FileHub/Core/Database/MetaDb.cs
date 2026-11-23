@@ -87,7 +87,7 @@ public sealed class MetaDb : IDisposable
             CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING {ContentFtsDef};
             CREATE TABLE IF NOT EXISTS props(path TEXT PRIMARY KEY, modified INTEGER NOT NULL, json TEXT NOT NULL);
             CREATE VIRTUAL TABLE IF NOT EXISTS props_fts USING fts5(path UNINDEXED, body, tokenize='unicode61 remove_diacritics 2');
-            CREATE TABLE IF NOT EXISTS thumbs(key TEXT PRIMARY KEY, modified INTEGER NOT NULL, png BLOB NOT NULL, accessed INTEGER NOT NULL);
+            DROP TABLE IF EXISTS thumbs; -- 0.3.28: thumbnails live in thumbs.db; Maintain gives the space back
             CREATE TABLE IF NOT EXISTS folder_views(path TEXT PRIMARY KEY, json TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT);
             """);
@@ -482,49 +482,6 @@ public sealed class MetaDb : IDisposable
                 DELETE FROM content_meta; DELETE FROM props_fts; DELETE FROM props;
                 """);
         }
-    }
-
-    // ------------------------------------------------------------------ thumbnails
-
-    public byte[]? GetThumb(string key, long modified)
-    {
-        using var c = Open();
-        using var cmd = c.CreateCommand();
-        cmd.CommandText = "SELECT png FROM thumbs WHERE key=$k AND modified=$m";
-        cmd.Parameters.AddWithValue("$k", key);
-        cmd.Parameters.AddWithValue("$m", modified);
-        return cmd.ExecuteScalar() as byte[];
-    }
-
-    public void PutThumb(string key, long modified, byte[] png)
-    {
-        // only a cache: when another write (a one-time VACUUM) holds the database, skip it rather than stall thumbnails
-        if (!Monitor.TryEnter(_writeLock, 300)) return;
-        try
-        {
-            using var c = Open();
-            using var cmd = c.CreateCommand();
-            cmd.CommandText = "INSERT OR REPLACE INTO thumbs(key, modified, png, accessed) VALUES($k,$m,$p,$a)";
-            cmd.Parameters.AddWithValue("$k", key);
-            cmd.Parameters.AddWithValue("$m", modified);
-            cmd.Parameters.AddWithValue("$p", png);
-            cmd.Parameters.AddWithValue("$a", DateTime.UtcNow.Ticks);
-            cmd.ExecuteNonQuery();
-        }
-        finally { Monitor.Exit(_writeLock); }
-    }
-
-    public long ThumbCount()
-    {
-        using var c = Open();
-        using var cmd = c.CreateCommand();
-        cmd.CommandText = "SELECT COUNT(*) FROM thumbs";
-        return (long)(cmd.ExecuteScalar() ?? 0L);
-    }
-
-    public void ClearThumbs()
-    {
-        lock (_writeLock) { using var c = Open(); Exec(c, "DELETE FROM thumbs"); }   // Maintain gives the space back
     }
 
     // ------------------------------------------------------------------ folder views / kv

@@ -46,6 +46,7 @@ public static class Paths
     public static string SettingsFile => Path.Combine(DataDir, "settings.json");
     public static string IndexFile => Path.Combine(DataDir, "index.fhdb");
     public static string MetaDbFile => Path.Combine(DataDir, "meta.db");
+    public static string ThumbDbFile => Path.Combine(DataDir, "thumbs.db");
 
     static Paths()
     {

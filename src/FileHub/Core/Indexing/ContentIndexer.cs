@@ -119,7 +119,7 @@ public sealed class ContentIndexer : IDisposable
     /// A file's drive: its place in the content pass (0 NVMe, 1 other SSD, 2 removable, 3 hard drive or unknown) and
     /// whether to read its files one at a time (a spinning disk, or one Windows can't describe: a network path…).
     /// </summary>
-    private static (int rank, bool oneAtATime) DriveOf(string path)
+    internal static (int rank, bool oneAtATime) DriveOf(string path)
     {
         if (path.Length < 2 || path[1] != ':') return (3, true);
         char d = char.ToUpperInvariant(path[0]);

@@ -2,6 +2,24 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.28
+
+### New
+- **Thumbnails are made ahead of time.** A background pass makes a thumbnail for every picture, video and PDF in your
+  folders and elsewhere (not Windows, program or code-library folders: theirs are made when you open such a folder,
+  then kept), so icon views show them at once instead of when a folder is first opened. It runs after the content
+  pass, in the same drive order (NVMe, SSD, removable, hard drive; a hard drive one file at a time), and files you save
+  or change get theirs right away. Explorer's status line shows "Thumbnails 1,200 / 45,000" while it works. On this PC:
+  45,663 thumbnails in about 90 seconds.
+- **Small icons show thumbnails too**, like Medium, Large and Extra large.
+
+### Changed
+- **Thumbnails live in their own file, thumbs.db**, next to meta.db, so making thousands of them never waits on content
+  indexing (or the other way round) and they can be cleared on their own. One 256 px thumbnail per file serves every
+  view size (scaled while loading, under 1 ms). They're stored as JPEG (about 13 KB for a photo, against 88 KB as
+  PNG before), or PNG when the image has see-through parts. 45,663 thumbnails take 0.6 GB. Thumbnails of deleted files
+  are dropped, and free space goes back to the disk on its own. The old cache in meta.db is removed.
+
 ## 0.3.27
 
 ### Faster

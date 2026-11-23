@@ -24,6 +24,8 @@ public partial class App : Application
     public static ShellImaging Imaging { get; private set; } = null!;
     public static ImageLoader Images { get; private set; } = null!;
     public static ContentIndexer Content { get; private set; } = null!;
+    public static ThumbDb Thumbs { get; private set; } = null!;
+    public static ThumbIndexer ThumbPass { get; private set; } = null!;
     public static bool HubHotkeyRegistered { get; private set; }
 
     private static App Instance => (App)Current;
@@ -68,13 +70,16 @@ public partial class App : Application
         ThemeManager.Apply(Settings.General.Theme);
 
         Db = new MetaDb(Paths.MetaDbFile);
-        Imaging = new ShellImaging(Db) { DiskCacheEnabled = Settings.Index.ThumbnailCaching };
+        Thumbs = new ThumbDb(Paths.ThumbDbFile);
+        Imaging = new ShellImaging(Thumbs) { DiskCacheEnabled = Settings.Index.ThumbnailCaching };
         Images = new ImageLoader(Imaging);
         Index = new IndexService(Settings);
         Search = new SearchEngine(Index, Db);
         Content = new ContentIndexer(Index, Db, Settings);
         Index.Start();
         Content.Start();
+        ThumbPass = new ThumbIndexer(Index, Thumbs, Settings, Content);
+        ThumbPass.Start();
 
         _hook = new KeyboardHook(Dispatcher);
         _hook.StartMenuRequested += ToggleStartMenu;
@@ -295,6 +300,7 @@ public partial class App : Application
         if (Index.Paused == paused) return;
         Index.SetPaused(paused);
         Content.Paused = paused;
+        ThumbPass.Paused = paused;
         IndexControlChanged?.Invoke();
     }
 
@@ -343,9 +349,11 @@ public partial class App : Application
             _hotkeys?.Dispose();
             _tray?.Dispose();
             Content?.Dispose();
+            ThumbPass?.Dispose();
             Images?.Dispose();
             Index?.Dispose();
             Db?.Dispose();
+            Thumbs?.Dispose();
             _single?.Dispose();
         }
         catch (Exception ex) { Log.Error("Shutdown error", ex); }

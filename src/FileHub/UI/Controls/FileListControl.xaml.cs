@@ -204,7 +204,7 @@ public partial class FileListControl : UserControl
     private void ApplyIconSize()
     {
         if (_items == null) return;
-        bool thumb = _viewMode is ViewMode.MediumIcons or ViewMode.LargeIcons or ViewMode.ExtraLargeIcons;
+        bool thumb = _viewMode is ViewMode.SmallIcons or ViewMode.MediumIcons or ViewMode.LargeIcons or ViewMode.ExtraLargeIcons;
         foreach (var it in _items) it.SetIconSize(_iconPx, thumb);
     }
 
