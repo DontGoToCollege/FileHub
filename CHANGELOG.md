@@ -2,6 +2,27 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.39
+
+### Added
+- **Drives are recognised by their partition, not their letter.** Each drive is known by its GPT partition ID (or, on
+  older MBR disks and exFAT/FAT drives, its 64-bit volume serial), together with its file system and size, all kept in
+  `drives.json` in the data folder. Reading these needs no admin rights and writes nothing to the drives. A drive under
+  a new letter, or a portable drive moved to another PC, keeps its file list, its file contents and its thumbnails: the
+  saved data moves to the new letter (500 rows at a time, shown on the Index status line), and only that drive is
+  re-read for changes. Files that haven't changed are never read again.
+- **Unplugged drives show as offline instead of being wiped.** Their files leave search results until they're back:
+  the file list waits in `drives\` in the data folder, and the contents and thumbnails stay in the database.
+  Hub → Index & database lists them as "offline · kept · last seen as G: <date>".
+
+### Changed
+- A new drive, or a folder added in Settings, is crawled on its own. A drive appearing, disappearing or changing letter
+  no longer rebuilds the whole index. Drive letters are checked every 3 seconds.
+- The thumbnail pass no longer deletes the thumbnails of drives that aren't plugged in.
+- A watcher error from a drive that was just unplugged no longer starts a full rebuild.
+- On first start, the data that 0.3.38 and earlier stored by drive letter is taken over by the drive under that letter.
+  A drive that's unplugged at that moment can't be identified, so its old data is dropped, as before.
+
 ## 0.3.38
 
 ### Added

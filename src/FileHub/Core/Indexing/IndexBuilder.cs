@@ -29,23 +29,7 @@ public static class IndexBuilder
         long total = partials.Sum(p => (long)p.Count);
         var merged = new FileIndex((int)Math.Min(int.MaxValue - 1024, total + 1024)) { BuiltUtc = DateTime.UtcNow };
         foreach (var part in partials)
-        {
-            if (part is null) continue;
-            var map = new int[part.Count];
-            var entries = part.Entries;
-            for (int i = 0; i < part.Count; i++)
-            {
-                ref var e = ref entries[i];
-                if (e.Name is null) { map[i] = -1; continue; }
-                if (e.Parent < 0) map[i] = merged.AddRoot(e.Name);
-                else
-                {
-                    int parent = map[e.Parent];
-                    map[i] = merged.AppendRaw(e.Name, parent, e.Size, e.Modified, e.Created, e.Attributes);
-                    if (e.IsDirectory) merged.RegisterDirectory(merged.PathOf(map[i]), map[i]);
-                }
-            }
-        }
+            if (part is not null) merged.Merge(part);
         return merged;
     }
 

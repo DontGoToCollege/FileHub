@@ -134,6 +134,10 @@ public sealed class ThumbDb : IDisposable
         return gone.Count;
     }, 0);
 
+    /// <summary>Re-keys every thumbnail under path prefix <paramref name="from"/> to <paramref name="to"/> (a drive under a new letter).</summary>
+    public long MovePrefix(string from, string to, Action<long>? progress = null) =>
+        Guard(() => MetaDb.MoveRows(Open, _writeLock, ["thumbs"], from, to, progress), 0L);
+
     public long Count() => Guard(() =>
     {
         using var c = Open(); using var cmd = c.CreateCommand();

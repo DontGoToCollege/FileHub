@@ -78,6 +78,7 @@ public partial class App : Application
         Imaging = new ShellImaging(Thumbs) { DiskCacheEnabled = Settings.Index.ThumbnailCaching };
         Images = new ImageLoader(Imaging);
         Index = new IndexService(Settings);
+        Index.MoveRows = (from, to, progress) => { long m = Db.MovePrefix(from, to, progress); Thumbs.MovePrefix(from, to, n => progress(m + n)); };
         Search = new SearchEngine(Index, Db);
         Content = new ContentIndexer(Index, Db, Settings);
         Index.Start();

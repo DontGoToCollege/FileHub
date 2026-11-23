@@ -95,7 +95,8 @@ public sealed class IndexService : IDisposable
                 Index = loaded;
                 _goodCount = loaded.LiveCount;
                 _lastSave = DateTime.UtcNow; // the snapshot on disk is current; no need to re-save on the first watcher event
-                SetState(IndexState.Ready, $"{loaded.LiveCount:N0} items (snapshot)");
+                // searchable now; Ready (which lets the content and thumbnail passes start) once the drives are matched up
+                SetState(IndexState.Loading, $"{loaded.LiveCount:N0} items (snapshot)");
                 IndexChanged?.Invoke();
                 Log.Info($"Index snapshot loaded: {loaded.LiveCount:N0} entries in {sw.ElapsedMilliseconds} ms");
             }
@@ -104,18 +105,197 @@ public sealed class IndexService : IDisposable
 
             bool stale = loaded == null
                          || _settings.Index.RebuildOnStartup
-                         || (DateTime.UtcNow - loaded.BuiltUtc).TotalHours >= Math.Max(1, _settings.Index.RebuildIntervalHours)
-                         || RootsDiffer(loaded);
+                         || (DateTime.UtcNow - loaded.BuiltUtc).TotalHours >= Math.Max(1, _settings.Index.RebuildIntervalHours);
+            await SyncDrivesAsync(crawl: !stale);   // a full rebuild follows anyway: no need to crawl new drives first
+            _driveMask = string.Join("", Environment.GetLogicalDrives());
+            _drivePoll = new Timer(_ => PollDrives(), null, 3000, 3000);
             if (stale) await RebuildAsync();
             else SetState(IndexState.Ready, $"{Index.LiveCount:N0} items");
         });
     }
 
-    private bool RootsDiffer(FileIndex loaded)
+    // ------------------------------------------------------------------ drives
+
+    /// <summary>The drives FileHub knows by partition ID (drives.json).</summary>
+    public DriveRegistry Drives { get; } = DriveRegistry.Load();
+
+    /// <summary>Re-keys a drive's meta.db / thumbs.db rows from one path prefix to another, reporting rows moved (set by App).</summary>
+    public Action<string, string, Action<long>>? MoveRows { get; set; }
+
+    private Timer? _drivePoll;
+    private string _driveMask = "";
+    private volatile bool _syncQueued;
+
+    // shortcut: watches drive letters only, so a drive swapped for another under the same letter within 3 s, or a card
+    // put into an empty reader slot, is noticed at the next start; upgrade to WM_DEVICECHANGE if that ever matters
+    private void PollDrives()
     {
-        var want = GetRoots().Select(FileIndex.NormalizeDir).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
-        var have = loaded.Roots.Select(loaded.PathOf).Select(FileIndex.NormalizeDir).OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
-        return !want.SequenceEqual(have, StringComparer.OrdinalIgnoreCase);
+        string mask = string.Join("", Environment.GetLogicalDrives());
+        if (mask == _driveMask) return;
+        _driveMask = mask;
+        Log.Info("Drive letters changed: " + mask.Replace(":\\", ""));
+        if (_syncQueued) return;
+        _syncQueued = true;
+        _ = Task.Run(() => SyncDrivesAsync(crawl: true));
+    }
+
+    private async Task SyncDrivesAsync(bool crawl)
+    {
+        try { await _buildGate.WaitAsync(_lifetime.Token); } catch (OperationCanceledException) { return; }
+        _syncQueued = false;
+        _building = true;   // live changes queue up meanwhile and are applied after
+        try { SyncDrives(crawl); }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { Log.Error("Drive check failed", ex); }
+        finally
+        {
+            _building = false;
+            ReplayPending();
+            if (State != IndexState.Ready && State != IndexState.Loading) SetState(IndexState.Ready, $"{Index.LiveCount:N0} items");
+            _buildGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Matches the drives plugged in now to the ones FileHub knows by partition ID. A known drive under another letter (or
+    /// on another PC) keeps its file list, contents and thumbnails, moved to the new letter, and only it is re-read for
+    /// changes; an unplugged one is set aside, not wiped; a new drive or folder root is crawled on its own.
+    /// </summary>
+    private void SyncDrives(bool crawl)
+    {
+        ContentIndexer.ForgetDrives();
+        var roots = GetRoots();
+        var index = Index;
+        var present = new Dictionary<char, (string key, string label, string kind)>();
+        // a clone shares its original's ID: the letter the drive was last seen under keeps it, the other counts as new
+        var found = roots.Where(r => r.Length == 3 && r[1] == ':').Select(r => (letter: char.ToUpperInvariant(r[0]), id: DriveRegistry.Identify(r[0])))
+            .Where(x => x.id != null).OrderBy(x => Drives.Find(x.id!.Value.key)?.Letter == x.letter.ToString() ? 0 : 1).ToList();
+        foreach (var (letter, id) in found)
+        {
+            var p = id!.Value;
+            if (present.Values.Any(o => o.key == p.key)) { Log.Warn($"Drive {letter}: same partition ID as another drive plugged in (a clone?); treated as a new drive"); p.key += "#" + letter; }
+            present[letter] = p;
+        }
+        string? KeyAt(string letter) => present.TryGetValue(letter[0], out var p) ? p.key : null;
+
+        bool changed = false;
+        var aside = new Dictionary<string, FileIndex>();
+        // 1. each known drive leaves a letter that now holds another drive (or none)
+        foreach (var d in Drives.Drives)
+        {
+            d.Online = false;
+            if (d.IndexAt is { } at && KeyAt(at) != d.Key)
+            {
+                int root = index.FindDirectory(at + ":\\");
+                if (root >= 0 && index[root].Parent < 0)
+                {
+                    aside[d.Key] = index.ExtractRoot(root);
+                    index.RemoveRoot(root);
+                    Log.Info($"Drive {at}: ({d.Label}) gone; its {aside[d.Key].LiveCount:N0} files are set aside");
+                }
+                d.IndexAt = null; changed = true;
+            }
+            // its saved contents and thumbnails stay under the letter unless another drive now has it
+            if (d.RowsAt is { } rows && KeyAt(rows) is { } other && other != d.Key) { Move(rows + ":\\", DriveRegistry.Parked(d)); d.RowsAt = null; }
+        }
+        // 2. each drive plugged in comes back under its letter
+        var refresh = new List<string>();
+        foreach (var (letter, p) in present)
+        {
+            string at = letter.ToString(), root = at + ":\\";
+            var d = Drives.Find(p.key);
+            if (d == null)
+            {
+                // first sight: what's listed or stored under this letter and claimed by no other drive is this one's (that's how
+                // the letter-keyed data of 0.3.38 and earlier is taken over)
+                d = new DriveRecord { Key = p.key };
+                if (!Drives.Drives.Any(o => o.RowsAt == at)) d.RowsAt = at;
+                if (!Drives.Drives.Any(o => o.IndexAt == at) && index.FindDirectory(root) >= 0) d.IndexAt = at;
+                Drives.Drives.Add(d);
+                Log.Info($"Drive {at}: new to FileHub ({p.label}, {p.kind}, {p.key})");
+                changed = true;
+            }
+            d.Letter = at; d.Label = p.label; d.Kind = p.kind; d.LastSeenUtc = DateTime.UtcNow; d.Online = true;
+            if (d.RowsAt != at) { Move(d.RowsAt is { } was ? was + ":\\" : DriveRegistry.Parked(d), root); d.RowsAt = at; }
+            if (d.IndexAt != at)
+            {
+                int stale = index.FindDirectory(root);
+                if (stale >= 0 && index[stale].Parent < 0) index.RemoveRoot(stale);   // listed under this letter, but no known drive's
+                string file = DriveRegistry.SetAsideFile(d);
+                var tree = aside.Remove(d.Key, out var t) ? t : IndexStore.Load(file);
+                if (tree != null)
+                {
+                    index.Merge(tree, root);
+                    refresh.Add(root);
+                    Log.Info($"Drive {at}: recognised ({p.label}); its {tree.LiveCount:N0} files are back, re-reading the drive for changes");
+                }
+                try { File.Delete(file); } catch { }
+                d.IndexAt = at; changed = true;
+            }
+        }
+        // drives still unplugged: their file lists wait on disk
+        foreach (var (key, tree) in aside)
+        {
+            try
+            {
+                string file = DriveRegistry.SetAsideFile(Drives.Find(key)!);
+                Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+                IndexStore.Save(tree, file);
+            }
+            catch (Exception ex) { Log.Warn("Set-aside file list not saved: " + ex.Message); }
+        }
+        // 3. roots no longer wanted go; new ones (a new drive, a folder added in Settings) are crawled on their own
+        var wanted = new HashSet<string>(roots.Select(FileIndex.NormalizeDir), StringComparer.OrdinalIgnoreCase);
+        foreach (int r in index.Roots.ToArray())
+            if (!wanted.Contains(FileIndex.NormalizeDir(index.PathOf(r)))) { Log.Info($"Root {index.PathOf(r)} no longer indexed"); index.RemoveRoot(r); changed = true; }
+        var live = index.Roots.Select(r => FileIndex.NormalizeDir(index.PathOf(r))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var toCrawl = wanted.Where(w => !live.Contains(w)).Concat(refresh).ToList();
+        if (crawl && toCrawl.Count > 0)
+        {
+            SetState(IndexState.Building, $"Indexing {string.Join(", ", toCrawl)}…");
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var built = IndexBuilder.Build(toCrawl, _settings.Index.Excludes, CrawlProgress(), _lifetime.Token, _runGate);
+            foreach (var r in refresh) { int id = index.FindDirectory(r); if (id >= 0) index.RemoveRoot(id); }
+            index.Merge(built);
+            Log.Info($"Indexed {string.Join(", ", toCrawl)}: {built.LiveCount:N0} entries in {sw.Elapsed.TotalSeconds:F1}s");
+            changed = true;
+        }
+
+        Drives.Save();
+        if (!changed) return;
+        _goodCount = index.LiveCount;   // an unplugged drive is no reason to think the index broke (see SaveAsync)
+        _dirty = true;
+        IndexChanged?.Invoke();
+        if (RealTime) _monitor.Watch(roots);
+        _ = SaveAsync();
+
+        void Move(string from, string to)
+        {
+            if (MoveRows == null) return;
+            static string Name(string prefix) => prefix.StartsWith("::") ? "storage" : prefix.TrimEnd('\\');
+            string what = $"Moving saved contents and thumbnails {Name(from)} → {Name(to)}";
+            SetState(IndexState.Building, what + "…");
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            long shown = 0;
+            MoveRows(from, to, n =>
+            {
+                if (sw.ElapsedMilliseconds - shown < 250) return;
+                shown = sw.ElapsedMilliseconds;
+                StatusText = $"{what}: {n:N0} rows"; StatusChanged?.Invoke();
+            });
+            Log.Info($"Drive data moved {from} -> {to} in {sw.ElapsedMilliseconds} ms");
+        }
+    }
+
+    private IProgress<IndexProgress> CrawlProgress()
+    {
+        var counts = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        return new Progress<IndexProgress>(p =>
+        {
+            lock (counts) { counts[p.Root] = p.Entries; ProgressCount = counts.Values.Sum(); }
+            StatusText = $"Indexing… {ProgressCount:N0} items";
+            StatusChanged?.Invoke();
+        });
     }
 
     public async Task RebuildAsync()
@@ -131,13 +311,7 @@ public sealed class IndexService : IDisposable
             var roots = GetRoots();
             SetState(IndexState.Building, "Indexing…");
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            var counts = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
-            var progress = new Progress<IndexProgress>(p =>
-            {
-                lock (counts) { counts[p.Root] = p.Entries; ProgressCount = counts.Values.Sum(); }
-                StatusText = $"Indexing… {ProgressCount:N0} items";
-                StatusChanged?.Invoke();
-            });
+            var progress = CrawlProgress();
             FileIndex built;
             try
             {
@@ -154,6 +328,8 @@ public sealed class IndexService : IDisposable
 
             Index = built;
             _goodCount = built.LiveCount;
+            foreach (var d in Drives.Drives.Where(d => d.Online)) d.IndexAt = built.FindDirectory(d.Letter + ":\\") >= 0 ? d.Letter : null;
+            Drives.Save();
             _building = false;
             ReplayPending();
             SetState(IndexState.Ready, $"{built.LiveCount:N0} items");
@@ -324,7 +500,12 @@ public sealed class IndexService : IDisposable
                 if ((DateTime.UtcNow - _lastOverflowRebuild).TotalMinutes < 30) { Log.Warn("Watcher overflow; rebuild skipped (last overflow rebuild < 30 min ago)"); break; }
                 _lastOverflowRebuild = DateTime.UtcNow;
                 Log.Warn("Watcher overflow; scheduling rebuild");
-                _ = Task.Delay(5000).ContinueWith(_ => RebuildAsync());
+                _ = Task.Delay(5000).ContinueWith(_ =>
+                {
+                    // an unplugged drive's watcher fails too: the drive check sets it aside, no rebuild needed
+                    if (!Directory.Exists(c.Path)) { Log.Info($"Rebuild skipped: {c.Path} is gone (unplugged)"); return Task.CompletedTask; }
+                    return RebuildAsync();
+                });
                 break;
         }
     }
@@ -387,6 +568,7 @@ public sealed class IndexService : IDisposable
     public void Dispose()
     {
         _lifetime.Cancel();
+        _drivePoll?.Dispose();
         _buildCts?.Cancel();
         _monitor.Dispose();
     }

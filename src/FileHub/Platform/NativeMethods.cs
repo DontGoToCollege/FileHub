@@ -352,4 +352,33 @@ internal static class Native
         var q = new STORAGE_PROPERTY_QUERY { PropertyId = property };
         return DeviceIoControl(h, 0x2D1400 /* IOCTL_STORAGE_QUERY_PROPERTY */, ref q, Marshal.SizeOf<STORAGE_PROPERTY_QUERY>(), buf, buf.Length, out int n, IntPtr.Zero) ? n : 0;
     }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool DeviceIoControl(Microsoft.Win32.SafeHandles.SafeFileHandle h, uint code, IntPtr input, int inSize, byte[] output, int outSize, out int returned, IntPtr overlapped);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetFileInformationByHandleEx(Microsoft.Win32.SafeHandles.SafeFileHandle h, int infoClass, byte[] output, int outSize);
+
+    /// <summary>
+    /// What stays the same for a drive's partition on any PC and under any letter: "gpt:{partition GUID}" on a GPT disk,
+    /// else "sn:{64-bit volume serial}" (NTFS's full serial; exFAT/FAT's 32-bit one); null if Windows tells neither.
+    /// Read-only, needs no admin rights.
+    /// </summary>
+    public static string? PartitionId(char letter)
+    {
+        using (var h = CreateFileW(@"\\.\" + letter + ":", 0, 3, IntPtr.Zero, 3, 0, IntPtr.Zero))
+        {
+            var buf = new byte[256];
+            // IOCTL_DISK_GET_PARTITION_INFO_EX: PartitionStyle 1 = GPT; PARTITION_INFORMATION_GPT.PartitionId sits at byte 48
+            if (!h.IsInvalid && DeviceIoControl(h, 0x70048, IntPtr.Zero, 0, buf, buf.Length, out int n, IntPtr.Zero) && n >= 64 && BitConverter.ToInt32(buf, 0) == 1)
+                return "gpt:" + new Guid(buf.AsSpan(48, 16)).ToString("D");
+        }
+        // FILE_ID_INFO.VolumeSerialNumber of the root folder (FSCTL_GET_NTFS_VOLUME_DATA would need admin rights)
+        using (var h = CreateFileW(letter + @":\", 0x80 /* FILE_READ_ATTRIBUTES */, 7, IntPtr.Zero, 3, 0x02000000 /* BACKUP_SEMANTICS: open a folder */, IntPtr.Zero))
+        {
+            var buf = new byte[24];
+            if (!h.IsInvalid && GetFileInformationByHandleEx(h, 18 /* FileIdInfo */, buf, buf.Length) && BitConverter.ToUInt64(buf, 0) != 0)
+                return "sn:" + BitConverter.ToUInt64(buf, 0).ToString("X16");
+        }
+        return null;
+    }
 }

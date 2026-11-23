@@ -106,6 +106,8 @@ public sealed class ThumbIndexer : IDisposable
         IsRunning = true;
         Status("Scanning for thumbnails to make…");
         var index = _index.Index;
+        // roots listed as the scan starts: thumbnails of a drive that's unplugged (or comes back mid-pass) are never pruned
+        var roots = index.Roots.Select(r => index.PathOf(r).TrimEnd('\\') + "\\").ToArray();
         var have = _db.LoadStamps();
         var exists = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // every picture/video/PDF still there, for pruning
         var todo = new List<(string path, long modified, int drive)>();
@@ -124,8 +126,8 @@ public sealed class ThumbIndexer : IDisposable
             if (have.Contains(path + "|" + e.Modified)) continue;
             todo.Add((path, e.Modified, ContentIndexer.DriveOf(path).rank * 32 + (path.Length > 1 && path[1] == ':' ? char.ToUpperInvariant(path[0]) - 'A' : 31)));
         }
-        // folders keep their thumbnail while they exist; files only while they're in the index
-        int pruned = _db.Prune(p => exists.Contains(p) || index.FindDirectory(p) >= 0);
+        // folders keep their thumbnail while they exist; files only while they're in the index (or on a drive not listed now)
+        int pruned = _db.Prune(p => exists.Contains(p) || index.FindDirectory(p) >= 0 || !roots.Any(r => p.StartsWith(r, StringComparison.OrdinalIgnoreCase)));
         if (pruned > 0) Log.Info($"Thumbnails: dropped {pruned:N0} of files that are gone");
         todo.Sort((a, b) => a.drive != b.drive ? a.drive.CompareTo(b.drive) : string.Compare(a.path, b.path, StringComparison.OrdinalIgnoreCase));
         Processed = 0;

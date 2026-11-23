@@ -63,7 +63,8 @@ public partial class IndexPage : UserControl, ISavablePage, IRefreshablePage
     {
         var content = App.Content.DriveProgress(); var thumbs = App.ThumbPass.DriveProgress();
         var letters = App.Index.GetRoots().Where(r => r.Length >= 2 && r[1] == ':').Select(r => char.ToUpperInvariant(r[0]))
-            .Concat(content.Select(p => p.drive)).Concat(thumbs.Select(p => p.drive)).Where(char.IsLetter).Distinct().OrderBy(c => c);
+            .Concat(content.Select(p => p.drive)).Concat(thumbs.Select(p => p.drive)).Where(char.IsLetter).Distinct().OrderBy(c => c)
+            .Where(c => Environment.GetLogicalDrives().Contains(c + ":\\"));   // an unplugged drive gets its offline row below instead
         // the pass works on the first drive in its order that still has files left
         char contentAt = content.Where(p => p.left > 0).Select(p => p.drive).FirstOrDefault(d => true, '\0');
         char thumbsAt = thumbs.Where(p => p.left > 0).Select(p => p.drive).FirstOrDefault(d => true, '\0');
@@ -79,7 +80,8 @@ public partial class IndexPage : UserControl, ISavablePage, IRefreshablePage
             });
             return new DriveRow(d + ":", label, Core.Indexing.ContentIndexer.KindName(root), names,
                 Cell(content, d, d == contentAt ? contentWord : ""), Cell(thumbs, d, d == thumbsAt ? thumbWord : ""));
-        }).ToList();
+        }).Concat(App.Index.Drives.Drives.ToArray().Where(x => !x.Online).OrderBy(x => x.Letter).Select(x =>
+            new DriveRow(x.Letter + ":", x.Label, x.Kind, "offline", $"kept · last seen as {x.Letter}: {x.LastSeenUtc.ToLocalTime():g}", "kept"))).ToList();
     }
 
     /// <summary>"37% (12,345 / 33,000) · working"; "—" before the pass has run; never rounds up to 100% while files are left.</summary>

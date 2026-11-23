@@ -553,5 +553,34 @@ public sealed class MetaDb : IDisposable
         }
     }
 
+    /// <summary>Re-keys every row under path prefix <paramref name="from"/> to <paramref name="to"/> (a drive under a new letter).</summary>
+    public long MovePrefix(string from, string to, Action<long>? progress = null)
+    {
+        long n = MoveRows(Open, _writeLock, ["content_meta", "props", "folder_views"], from, to, progress);
+        _views.Clear();
+        return n;
+    }
+
+    /// <summary>
+    /// The prefix move behind MetaDb's and ThumbDb's MovePrefix: 500 rows per statement, so the write lock is only ever
+    /// held briefly. Rowids stay (they're the FTS rowids); a row already at the new path is replaced.
+    /// </summary>
+    internal static long MoveRows(Func<SqliteConnection> open, object writeLock, string[] tables, string from, string to, Action<long>? progress)
+    {
+        long moved = 0;
+        foreach (var table in tables)
+            for (int n = 500; n == 500; moved += n, progress?.Invoke(moved))
+                lock (writeLock)
+                {
+                    using var c = open(); using var cmd = c.CreateCommand();
+                    // "\" < "]": the range is exactly the paths starting with the prefix
+                    cmd.CommandText = $"UPDATE OR REPLACE {table} SET path = $to || substr(path, $len + 1) WHERE rowid IN (SELECT rowid FROM {table} WHERE path >= $from AND path < $hi LIMIT 500)";
+                    cmd.Parameters.AddWithValue("$to", to); cmd.Parameters.AddWithValue("$from", from);
+                    cmd.Parameters.AddWithValue("$hi", from[..^1] + "]"); cmd.Parameters.AddWithValue("$len", from.Length);
+                    n = cmd.ExecuteNonQuery();
+                }
+        return moved;
+    }
+
     public void Dispose() => SqliteConnection.ClearAllPools();
 }

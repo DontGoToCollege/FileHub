@@ -124,6 +124,51 @@ public sealed class FileIndex
         _deleted += gone.Count;
     }
 
+    /// <summary>Drops a root and its whole tree (a drive unplugged or set aside).</summary>
+    public void RemoveRoot(int rootId)
+    {
+        lock (_lock) { if (rootId >= 0 && rootId < _count && _entries[rootId].Name is not null) RemoveNoLock(rootId); _roots.Remove(rootId); }
+    }
+
+    /// <summary>A copy of one root's tree as an index of its own (a drive set aside while it's unplugged).</summary>
+    public FileIndex ExtractRoot(int rootId)
+    {
+        lock (_lock)
+        {
+            var entries = _entries; int count = _count;
+            var part = new FileIndex(1 << 16) { BuiltUtc = BuiltUtc };
+            var map = new int[count - rootId];   // a child's id is always above its parent's (see RemoveNoLock)
+            Array.Fill(map, -1);
+            map[0] = part.AddRoot(entries[rootId].Name!);
+            for (int i = rootId + 1; i < count; i++)
+            {
+                ref var e = ref entries[i];
+                if (e.Name is null || e.Parent < rootId || map[e.Parent - rootId] < 0) continue;
+                int id = map[i - rootId] = part.AppendRaw(e.Name, map[e.Parent - rootId], e.Size, e.Modified, e.Created, e.Attributes);
+                if (e.IsDirectory) part.RegisterDirectory(part.PathOf(id), id);
+            }
+            return part;
+        }
+    }
+
+    /// <summary>Adds another index's trees; <paramref name="rootName"/> renames its root (a drive back under another letter).</summary>
+    public void Merge(FileIndex part, string? rootName = null)
+    {
+        var map = new int[part.Count];
+        var entries = part.Entries;
+        for (int i = 0; i < part.Count; i++)
+        {
+            ref var e = ref entries[i];
+            if (e.Name is null || (e.Parent >= 0 && map[e.Parent] < 0)) { map[i] = -1; continue; }
+            if (e.Parent < 0) map[i] = AddRoot(rootName ?? e.Name);
+            else
+            {
+                map[i] = AppendRaw(e.Name, map[e.Parent], e.Size, e.Modified, e.Created, e.Attributes);
+                if (e.IsDirectory) RegisterDirectory(PathOf(map[i]), map[i]);
+            }
+        }
+    }
+
     public void Rename(int id, string newName)
     {
         lock (_lock)

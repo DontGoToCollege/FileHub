@@ -143,6 +143,9 @@ public sealed class ContentIndexer : IDisposable
 
     private static readonly Dictionary<char, (int rank, bool oneAtATime)> _drives = new();
 
+    /// <summary>Drive letters changed hands: look each drive's kind up again.</summary>
+    internal static void ForgetDrives() { lock (_drives) _drives.Clear(); }
+
     /// <summary>
     /// A file's drive: its place in the content pass (0 NVMe, 1 other SSD, 2 removable, 3 hard drive or unknown) and
     /// whether to read its files one at a time (a spinning disk, or one Windows can't describe: a network path…).
