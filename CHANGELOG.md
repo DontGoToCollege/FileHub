@@ -2,6 +2,19 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.19
+
+### Faster
+- **Sorting big search results is fast.** The Hub shows the first 5,000 results but used to sort every match: sorting
+  all 1.1 million files by name took 7 s, by path several seconds. Now each core keeps only its best 5,000, and name
+  sorts compare a short key per result before reading names. Every file sorted by name: 7 s → 0.3 s; by path: 0.3 s
+  (100k results took 2.8 s before); by size or date: under 0.1 s. Typing with a sort picked no longer lags.
+- **Sorting a folder by name is up to 6× faster.** Names that start the same (common in big folders) used to be
+  compared letter by letter from the start; the identical part is now skipped in one step. A folder of 81,000 files:
+  2 s → 0.3 s; 25,000 files: 170 → 73 ms. The order is exactly the same as before.
+- Sort by Path now keeps each folder's files together (folder by folder), and works on any number of results; it used
+  to give up on sorting past 400,000.
+
 ## 0.3.18
 
 ### Faster

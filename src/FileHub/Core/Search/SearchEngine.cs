@@ -101,12 +101,13 @@ public sealed class SearchEngine
 
         ct.ThrowIfCancellationRequested();
 
-        if (options.Sort != SortKey.None && all.Length > 1)
+        if (options.Sort == SortKey.Name && all.Length > 20_000)
+            all = SortByName(index, all, options.SortDescending, options.MaxResults);
+        else if (options.Sort != SortKey.None && all.Length > 1)
         {
             var cmp = MakeComparer(index, options.Sort, options.SortDescending);
-            // sorting very large result sets by path would be costly; cap the sort work
-            if (all.Length > 400_000 && (options.Sort == SortKey.Path))
-                Array.Sort(all, 0, all.Length, Comparer<int>.Create((a, b) => a.CompareTo(b)));
+            if (all.Length > options.MaxResults * 8)   // below that a plain sort is as quick
+                all = SmallestSorted(all, cmp, options.MaxResults);
             else
                 Array.Sort(all, cmp);
         }
@@ -138,6 +139,111 @@ public sealed class SearchEngine
             ContentFrom = Math.Min(nameHits, ids.Length) };
     }
 
+    /// <summary>
+    /// The first <paramref name="k"/> of <paramref name="items"/> in sorted order, without sorting the rest (only those are
+    /// shown): each core keeps the k smallest of its share, then the shares are merged. 1.1M by name: 7 s before.
+    /// Shuffles <paramref name="items"/> in place.
+    /// </summary>
+    public static T[] SmallestSorted<T>(T[] items, IComparer<T> cmp, int k)
+    {
+        // results come in index order, where neighbours have similar names and sizes, so a share would keep replacing its
+        // kept k; in random order nearly every item loses to the root in one comparison (785k by name: 275 → ~115 ms)
+        Random.Shared.Shuffle(items);
+        int parts = Math.Clamp(items.Length / 50_000, 1, Environment.ProcessorCount);
+        var shares = new T[parts][];
+        Parallel.For(0, parts, p => shares[p] = HeapTop(items.AsSpan(items.Length * p / parts, items.Length * (p + 1) / parts - items.Length * p / parts).ToArray(), cmp, k));
+        // k-way merge of the sorted shares
+        var next = new PriorityQueue<(int share, int pos), T>(parts, cmp);
+        for (int p = 0; p < parts; p++) if (shares[p].Length > 0) next.Enqueue((p, 0), shares[p][0]);
+        var top = new T[Math.Min(k, shares.Sum(s => s.Length))];
+        for (int i = 0; i < top.Length; i++)
+        {
+            next.TryDequeue(out var at, out top[i]);
+            if (at.pos + 1 < shares[at.share].Length) next.Enqueue((at.share, at.pos + 1), shares[at.share][at.pos + 1]);
+        }
+        return top;
+    }
+
+    private static T[] HeapTop<T>(T[] items, IComparer<T> cmp, int k)
+    {
+        // max-heap of the k smallest so far: its root is the one to beat, and most items lose to it in one comparison
+        var heap = new PriorityQueue<T, T>(k, Comparer<T>.Create((a, b) => cmp.Compare(b, a)));
+        foreach (var item in items)
+        {
+            if (heap.Count < k) heap.Enqueue(item, item);
+            else if (cmp.Compare(item, heap.Peek()) < 0) heap.DequeueEnqueue(item, item);
+        }
+        var top = new T[heap.Count];
+        for (int i = top.Length - 1; i >= 0; i--) top[i] = heap.Dequeue();
+        return top;
+    }
+
+    /// <summary>
+    /// Name sort of a big result set: comparing two names mostly waits on memory (two strings scattered among a million),
+    /// so each result carries its name's first 8 letters packed in a number, side by side, and the names themselves are
+    /// read only when those can't tell. Same order as <see cref="MakeComparer"/>.
+    /// </summary>
+    private static int[] SortByName(FileIndex index, int[] ids, bool desc, int max)
+    {
+        var entries = index.Entries;
+        var keyed = new (ulong key, int id)[ids.Length];
+        Parallel.For(0, ids.Length, i => keyed[i] = (NameKey(entries[ids[i]].Name ?? ""), ids[i]));
+        int sign = desc ? -1 : 1;
+        var cmp = Comparer<(ulong key, int id)>.Create((a, b) =>
+        {
+            int r = CompareNameKeys(a.key, b.key);
+            if (r == 0) r = CompareNames(entries[a.id].Name ?? "", entries[b.id].Name ?? "");
+            return r != 0 ? sign * r : a.id.CompareTo(b.id);
+        });
+        if (ids.Length > max * 8) keyed = SmallestSorted(keyed, cmp, max); else Array.Sort(keyed, cmp);
+        return Array.ConvertAll(keyed, x => x.id);
+    }
+
+    /// <summary>
+    /// A name's first 8 characters as bytes, first in the top byte, so that keys order like <see cref="CompareNames"/>:
+    /// letters upper-cased, 0 where the name ends, and the key stops at the first digit ('0': a number's value needs the
+    /// whole name) or non-ASCII character (0xFF: "can't tell").
+    /// </summary>
+    public static ulong NameKey(string s)
+    {
+        ulong key = 0;
+        for (int i = 0; i < 8; i++)
+        {
+            int b = i >= s.Length ? 0 : s[i] >= 128 ? 0xFF : char.IsAsciiDigit(s[i]) ? '0' : char.ToUpperInvariant(s[i]);
+            key |= (ulong)b << (56 - 8 * i);
+            if (b is 0 or 0xFF or '0') break;
+        }
+        return key;
+    }
+
+    /// <summary>Order of two <see cref="NameKey"/>s, or 0 when equal or when they differ at a "can't tell" byte.</summary>
+    public static int CompareNameKeys(ulong x, ulong y)
+    {
+        if (x == y) return 0;
+        int shift = 56 - (System.Numerics.BitOperations.LeadingZeroCount(x ^ y) & ~7);
+        if ((byte)(x >> shift) == 0xFF || (byte)(y >> shift) == 0xFF) return 0;
+        return x < y ? -1 : 1;
+    }
+
+    /// <summary>
+    /// Path order, folder by folder (a folder's files stay together), by walking both parent chains instead of
+    /// building both paths for every comparison: sorting 100k results by path took 2.8 s.
+    /// </summary>
+    [System.Runtime.CompilerServices.SkipLocalsInit]   // the chains are written before they are read; zeroing 4 KB per comparison was a third of its time
+    private static int ComparePaths(Entry[] entries, int a, int b)
+    {
+        Span<int> ca = stackalloc int[512], cb = stackalloc int[512];
+        int na = 0, nb = 0;
+        for (int x = a; x >= 0 && na < ca.Length; x = entries[x].Parent) ca[na++] = x;
+        for (int y = b; y >= 0 && nb < cb.Length; y = entries[y].Parent) cb[nb++] = y;
+        for (int i = 1; i <= Math.Min(na, nb); i++)   // chains are leaf first: compare from the drive down
+        {
+            int x = ca[na - i], y = cb[nb - i];
+            if (x != y) return string.Compare(entries[x].Name, entries[y].Name, StringComparison.OrdinalIgnoreCase);
+        }
+        return na.CompareTo(nb);   // a folder before what is inside it
+    }
+
     public static IComparer<int> MakeComparer(FileIndex index, SortKey key, bool desc)
     {
         // a file deleted by the live indexer mid-sort has a null name; compare it as "" instead of crashing
@@ -155,7 +261,7 @@ public sealed class SearchEngine
                 int d = entries[b].IsDirectory.CompareTo(entries[a].IsDirectory);
                 return d != 0 ? d : string.Compare(FileTypes.ExtensionOf(entries[a].Name ?? ""), FileTypes.ExtensionOf(entries[b].Name ?? ""), StringComparison.OrdinalIgnoreCase);
             },
-            SortKey.Path => (a, b) => string.Compare(index.PathOf(a), index.PathOf(b), StringComparison.OrdinalIgnoreCase),
+            SortKey.Path => (a, b) => ComparePaths(entries, a, b),
             _ => (a, b) => a.CompareTo(b),
         };
         return Comparer<int>.Create((a, b) => { int r = c(a, b); return r != 0 ? sign * r : a.CompareTo(b); });
@@ -164,7 +270,11 @@ public sealed class SearchEngine
     /// <summary>Natural ("logical") string comparison like Explorer: file2 &lt; file10.</summary>
     public static int CompareNames(string a, string b)
     {
-        int ia = 0, ib = 0;
+        // skip the identical start in one vectorised step (sibling names often share 50+ characters), backing up to the
+        // start of a number it cuts through so "file9" vs "file10" still compare by value. Sorting 81k names: 2 s → 0.3 s
+        int ia = a.AsSpan().CommonPrefixLength(b);
+        while (ia > 0 && char.IsDigit(a[ia - 1])) ia--;
+        int ib = ia;
         while (ia < a.Length && ib < b.Length)
         {
             char ca = a[ia], cb = b[ib];
