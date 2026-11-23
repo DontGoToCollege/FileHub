@@ -93,6 +93,7 @@ public sealed class IndexService : IDisposable
             if (loaded != null)
             {
                 Index = loaded;
+                _goodCount = loaded.LiveCount;
                 _lastSave = DateTime.UtcNow; // the snapshot on disk is current; no need to re-save on the first watcher event
                 SetState(IndexState.Ready, $"{loaded.LiveCount:N0} items (snapshot)");
                 IndexChanged?.Invoke();
@@ -152,6 +153,7 @@ public sealed class IndexService : IDisposable
             }
 
             Index = built;
+            _goodCount = built.LiveCount;
             _building = false;
             ReplayPending();
             SetState(IndexState.Ready, $"{built.LiveCount:N0} items");
@@ -178,10 +180,20 @@ public sealed class IndexService : IDisposable
         if (!_saveGate.Wait(0)) return; // a save is already running
         try
         {
+            // never store an index that lost over half its entries through live changes: something went wrong
+            // (that's how an empty index got saved once); keep the good snapshot and rebuild instead
+            int live = Index.LiveCount;
+            if (_goodCount > 10_000 && live < _goodCount / 2)
+            {
+                Log.Warn($"Index shrank from {_goodCount:N0} to {live:N0} entries without a rebuild; not saving it, rebuilding instead");
+                if (!_building && !_lifetime.IsCancellationRequested) _ = Task.Run(RebuildAsync);
+                return;
+            }
             _dirty = false;
             var sw = System.Diagnostics.Stopwatch.StartNew();
             IndexStore.Save(Index, Paths.IndexFile);
             _lastSave = DateTime.UtcNow;
+            _goodCount = live;
             Log.Info($"Index snapshot saved in {sw.ElapsedMilliseconds} ms");
         }
         catch (Exception ex) { Log.Error("Index save failed", ex); }
@@ -189,6 +201,7 @@ public sealed class IndexService : IDisposable
     });
 
     private volatile bool _dirty;   // live changes applied since the last snapshot save
+    private volatile int _goodCount; // entries at the last load, build or save: the yardstick for "the index suddenly shrank"
 
     /// <summary>Called on exit: writes the snapshot if live changes would otherwise be lost (never while loading, so an empty index can't overwrite a good one).</summary>
     public void SaveIfChanged()
@@ -245,8 +258,10 @@ public sealed class IndexService : IDisposable
                 int id = index.FindByPath(c.Path);
                 // a drive root can't be deleted: such an event is bogus, and removing the root would empty the whole index
                 if (id >= 0 && index[id].Parent < 0) { Log.Warn("Ignored a delete event for drive root " + c.Path); break; }
+                // still on disk: a late or bogus event (e.g. an app that deletes and re-creates a file while saving)
+                if (id >= 0 && ExistsOnDisk(c.Path)) break;
                 if (id >= 0 && index[id].IsDirectory) Log.Info("Folder removed from index: " + c.Path);
-                if (id >= 0) index.Remove(id);
+                if (id >= 0) RemoveLogged(index, id, c.Path);
                 FileChanged?.Invoke(c.Path, false);
                 break;
             }
@@ -284,7 +299,12 @@ public sealed class IndexService : IDisposable
                     string oldParent = Path.GetDirectoryName(c.OldPath!) ?? string.Empty;
                     string newParent = Path.GetDirectoryName(c.Path) ?? string.Empty;
                     if (string.Equals(oldParent, newParent, StringComparison.OrdinalIgnoreCase)) index.Rename(id, newName);
-                    else { index.Remove(id); AddPath(index, c.Path); }
+                    else
+                    {
+                        // moved to another folder; only drop the old entry if it's really gone from the old place
+                        if (!ExistsOnDisk(c.OldPath!)) RemoveLogged(index, id, c.OldPath!);
+                        AddPath(index, c.Path);
+                    }
                     FileChanged?.Invoke(c.Path, isDir);
                 }
                 else AddPath(index, c.Path);
@@ -301,6 +321,20 @@ public sealed class IndexService : IDisposable
                 _ = Task.Delay(5000).ContinueWith(_ => RebuildAsync());
                 break;
         }
+    }
+
+    private static bool ExistsOnDisk(string path)
+    {
+        try { return File.Exists(path) || Directory.Exists(path); } catch { return false; }
+    }
+
+    /// <summary>Removes an entry (a folder takes its contents with it) and logs any removal that takes a big bite out of the index.</summary>
+    private static void RemoveLogged(FileIndex index, int id, string path)
+    {
+        int before = index.LiveCount;
+        index.Remove(id);
+        int gone = before - index.LiveCount;
+        if (gone >= 10_000) Log.Warn($"Removing {path} took {gone:N0} entries out of the index ({before:N0} -> {index.LiveCount:N0})");
     }
 
     private void AddPath(FileIndex index, string path)

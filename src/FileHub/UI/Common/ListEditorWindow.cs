@@ -111,13 +111,17 @@ public sealed class ListEditorWindow : Window
         {
             var row = _rows[i];
             var g = NewRowGrid();
+            CheckBox? cb = null;
             if (row.CanHide)
             {
-                var cb = new CheckBox { IsChecked = row.Shown, VerticalAlignment = VerticalAlignment.Center };
-                cb.Click += (_, _) => row.Shown = cb.IsChecked == true;
+                // the whole cell is clickable, not just the little box
+                cb = new CheckBox { IsChecked = row.Shown, VerticalAlignment = VerticalAlignment.Stretch, VerticalContentAlignment = VerticalAlignment.Center, Background = System.Windows.Media.Brushes.Transparent };
+                cb.Checked += (_, _) => row.Shown = true;     // any way it's ticked: click, Space, accessibility tools
+                cb.Unchecked += (_, _) => row.Shown = false;
                 g.Children.Add(cb);
             }
-            var label = new TextBlock { Text = row.Label, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Opacity = row.Id.StartsWith("---") ? 0.6 : 1 };
+            var label = new TextBlock { Text = row.Label, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Opacity = row.Id.StartsWith("---") ? 0.6 : 1, Background = System.Windows.Media.Brushes.Transparent };
+            if (cb != null) label.MouseLeftButtonUp += (_, _) => cb.IsChecked = cb.IsChecked != true;   // clicking the name ticks too
             Grid.SetColumn(label, 1); g.Children.Add(label);
             if (_hotkeys && row.Hotkey != null)
             {

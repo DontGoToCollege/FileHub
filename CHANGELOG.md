@@ -2,6 +2,18 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.12
+
+### Bug fixes
+- **The index can no longer wipe itself.** On top of 0.3.11's fix:
+  - A "deleted" or "moved away" report for something that's still on disk is ignored (apps that delete and re-create
+    a file while saving, late or garbled watcher reports).
+  - FileHub refuses to save an index that lost more than half its entries without a rebuild; it keeps the good
+    snapshot on disk and rebuilds instead, and logs why.
+  - Any single change that removes 10,000+ entries is logged with the folder and the counts.
+- **Sort options and Context menu lists:** clicking a row's name, or anywhere in its tick column, ticks it (before,
+  only the small box itself reacted), and ticks made with the keyboard or accessibility tools now count.
+
 ## 0.3.11
 
 ### New
