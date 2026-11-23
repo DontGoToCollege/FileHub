@@ -2,6 +2,14 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.4
+
+### Other
+- **Background test mode** (`--test`, for automated checks): windows open off-screen without ever taking focus or
+  staying on top, the start menu stays open while unfocused, and `--set-text [Title:]Name "text"` fills a text box
+  without focusing it. This lets FileHub be checked while you keep using the PC. Normal launches are unaffected.
+- Verified with it: typed text in the Start menu and Explorer search boxes now starts exactly at the hint (0.3.3 fix).
+
 ## 0.3.3
 
 ### Bug fixes

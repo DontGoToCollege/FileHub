@@ -48,7 +48,7 @@ public partial class ExplorerWindow : Window
     public void NavigateActive(string path)
     {
         if (_active == null) OpenTab(path); else { _active.Tab.Navigate(path); }
-        Activate(); Focus();
+        if (!App.TestMode) { Activate(); Focus(); }
     }
 
     private void Activate(TabEntry entry)

@@ -109,6 +109,15 @@ public partial class StartMenuWindow : Window
         BuildPinned();
         Position();
         SearchBox.Text = "";
+        if (App.TestMode)
+        {
+            // off-screen, unfocused, not topmost; stays open because it never gets (or loses) activation
+            ShowActivated = false; Topmost = false;
+            App.MakeNoActivate(this);
+            Show();
+            Left = -20000; Top = 0;
+            return;
+        }
         Show();
         Position();   // again now the window exists: the first pass had to guess the monitor's DPI
         Activate();

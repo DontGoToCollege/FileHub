@@ -41,6 +41,7 @@ public partial class App : Application
     {
         base.OnStartup(e);
         var args = e.Args;
+        TestMode = args.Contains("--test", StringComparer.OrdinalIgnoreCase);
 
         _single = new SingleInstance();
         if (!_single.TryAcquire())
@@ -99,6 +100,9 @@ public partial class App : Application
                 case "--show": ShowExplorer(); any = true; break;
                 case "--rebuild": _ = Index.RebuildAsync(); any = true; break;
                 case "--exit": ExitApp(); return;
+                case "--set-text" when TestMode && i + 2 < args.Length:
+                    // UI Automation's SetValue focuses the box (and so the window); this fills it without any focus change
+                    SetTestText(args[i + 1], args[i + 2]); i += 2; any = true; break;
                 default:
                     if (a.StartsWith("--")) break;
                     any = true;
@@ -113,6 +117,57 @@ public partial class App : Application
     }
 
     // ------------------------------------------------------------------ windows
+
+    /// <summary>
+    /// --test (first launch only): windows open off-screen, never activate and are never topmost, and the start menu
+    /// stays open without focus, so Claude can drive FileHub with UI Automation and capture it with PrintWindow
+    /// while the owner keeps using the PC. See the project CLAUDE.md for the recipe.
+    /// </summary>
+    public static bool TestMode { get; private set; }
+
+    /// <summary>Shows a window in front with focus, or in --test mode off-screen without focus.</summary>
+    public static void Present(Window w)
+    {
+        if (TestMode)
+        {
+            w.ShowActivated = false; w.Topmost = false;
+            w.WindowStartupLocation = WindowStartupLocation.Manual; w.Left = -20000; w.Top = 0;
+            MakeNoActivate(w);
+            w.Show();
+            return;
+        }
+        w.Show(); w.Activate();
+    }
+
+    /// <summary>--test: sets the text of a visible TextBox by x:Name, newest window first; "TitlePart:Name" picks the window.</summary>
+    private static void SetTestText(string name, string text)
+    {
+        string? title = null;
+        if (name.IndexOf(':') is int c and > 0) { title = name[..c]; name = name[(c + 1)..]; }
+        foreach (var w in Current.Windows.Cast<Window>().Reverse())
+            if (w.IsVisible && (title == null || w.Title.Contains(title, StringComparison.OrdinalIgnoreCase))
+                && FindVisible<System.Windows.Controls.TextBox>(w, name) is { } box) { box.Text = text; return; }
+        Log.Warn("--set-text: no visible text box named " + name);
+    }
+
+    private static T? FindVisible<T>(DependencyObject root, string name) where T : FrameworkElement
+    {
+        for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var c = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+            if (c is T t && t.Name == name && t.IsVisible) return t;
+            if (FindVisible<T>(c, name) is { } found) return found;
+        }
+        return null;
+    }
+
+    /// <summary>--test: the window can never become active, so FileHub's own focus calls can't pull it in front of the owner's work.</summary>
+    public static void MakeNoActivate(Window w)
+    {
+        var h = new System.Windows.Interop.WindowInteropHelper(w).EnsureHandle();
+        long ex = Native.GetWindowLongPtr(h, Native.GWL_EXSTYLE).ToInt64();
+        if ((ex & Native.WS_EX_NOACTIVATE) == 0) Native.SetWindowLongPtr(h, Native.GWL_EXSTYLE, new IntPtr(ex | Native.WS_EX_NOACTIVATE));
+    }
 
     public static void ShowExplorer(string? path = null, bool newWindow = false, string? selectPath = null)
     {
@@ -132,10 +187,10 @@ public partial class App : Application
             tab = win.Tabs.FirstOrDefault()?.Tab;
             app._explorers.Add(win);
             win.Closed += (_, _) => { app._explorers.Remove(win); app.MaybeExit(); };
-            win.Show();
+            Present(win);
         }
         if (win.WindowState == WindowState.Minimized) win.WindowState = WindowState.Normal;
-        win.Show(); win.Activate();
+        Present(win);
         if (selectPath != null && tab != null) tab.RequestSelect(selectPath);
     }
 
@@ -146,10 +201,10 @@ public partial class App : Application
         {
             app._hub = new HubWindow();
             app._hub.Closed += (_, _) => { app._hub = null; app.MaybeExit(); };
-            app._hub.Show();
+            Present(app._hub);
         }
         if (app._hub.WindowState == WindowState.Minimized) app._hub.WindowState = WindowState.Normal;
-        app._hub.Show(); app._hub.Activate();
+        Present(app._hub);
         app._hub.Navigate(page ?? "search", query);
     }
 
