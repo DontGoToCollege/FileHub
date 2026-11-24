@@ -2,6 +2,17 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.41
+
+### Fixed
+- **The Start menu stays open when the Win key opens it.** In 0.3.40 it took the keyboard but hid itself at once:
+  taking the foreground sends the menu a stray "deactivated" message, which it took for a click elsewhere. It now
+  closes only when Windows really puts another window in front (watched while the menu is open), so clicking any
+  other window, the desktop or the taskbar still closes it.
+- **More right-click entries show their icons.** Windows hands many icons over with handles that read as negative
+  numbers, and 0.3.40 skipped those (VLC, MediaInfo and Take Ownership showed theirs only some of the time). Handlers
+  that give their icon as the old "unchecked" bitmap (Windows' Share) now show it too.
+
 ## 0.3.40
 
 ### Added

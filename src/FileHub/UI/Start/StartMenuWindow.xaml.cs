@@ -48,7 +48,15 @@ public partial class StartMenuWindow : Window
     {
         InitializeComponent();
         _timer.Tick += (_, _) => { _timer.Stop(); RunSearch(); };
-        Deactivated += (_, _) => { if (!_ignoreDeactivate) HideMenu(); };
+        // close only when another window really took the foreground: taking it (ForceForeground's borrowed input queue
+        // being handed back) also sends a Deactivated while the menu is still in front, which used to hide it at once
+        Deactivated += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+        {
+            if (_ignoreDeactivate || !IsVisible) return;
+            if (Native.GetForegroundWindow() != new WindowInteropHelper(this).Handle) { HideMenu(); return; }
+            Activate();
+            SearchBox.Focus();
+        });
         SourceInitialized += (_, _) => { var h = new WindowInteropHelper(this).Handle; Native.SetRoundedCorners(h); Native.SetDarkTitleBar(h, ThemeManager.IsDark); };
         UserNameText.Text = Environment.UserName;
         UserInitial.Text = Environment.UserName.Length > 0 ? Environment.UserName[..1].ToUpperInvariant() : "?";
@@ -125,11 +133,19 @@ public partial class StartMenuWindow : Window
         if (!Native.ForceForeground(new WindowInteropHelper(this).Handle)) Log.Warn("Start menu could not take the foreground");
         Activate();
         SearchBox.Focus();
+        // click-away: WPF's Deactivated can't be trusted after the forced foreground (it may think the menu was never
+        // active), so watch which window Windows puts in front while the menu is open
+        _fgProc ??= (_, _, hwnd, _, _, _, _) => { if (!_ignoreDeactivate && IsVisible && hwnd != new WindowInteropHelper(this).Handle) HideMenu(); };
+        if (_fgHook == IntPtr.Zero) _fgHook = Native.SetWinEventHook(Native.EVENT_SYSTEM_FOREGROUND, Native.EVENT_SYSTEM_FOREGROUND, IntPtr.Zero, _fgProc, 0, 0, Native.WINEVENT_OUTOFCONTEXT);
     }
+
+    private Native.WinEventProc? _fgProc;   // kept alive while hooked
+    private IntPtr _fgHook;
 
     public void HideMenu()
     {
         _cts?.Cancel();
+        if (_fgHook != IntPtr.Zero) { Native.UnhookWinEvent(_fgHook); _fgHook = IntPtr.Zero; }
         Hide();
     }
 

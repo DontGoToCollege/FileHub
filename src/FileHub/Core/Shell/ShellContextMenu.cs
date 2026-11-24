@@ -157,7 +157,7 @@ public sealed class ShellContextMenu : IDisposable
                 var mii = new Native.MENUITEMINFO
                 {
                     cbSize = (uint)Marshal.SizeOf<Native.MENUITEMINFO>(),
-                    fMask = Native.MIIM_STRING | Native.MIIM_ID | Native.MIIM_SUBMENU | Native.MIIM_FTYPE | Native.MIIM_STATE | Native.MIIM_BITMAP,
+                    fMask = Native.MIIM_STRING | Native.MIIM_ID | Native.MIIM_SUBMENU | Native.MIIM_FTYPE | Native.MIIM_STATE | Native.MIIM_BITMAP | Native.MIIM_CHECKMARKS,
                     dwTypeData = buf, cch = 1023,
                 };
                 if (!Native.GetMenuItemInfoW(hMenu, (uint)i, true, ref mii)) continue;
@@ -165,6 +165,9 @@ public sealed class ShellContextMenu : IDisposable
                 string label = mii.cch > 0 && (mii.fType & Native.MFT_OWNERDRAW) == 0 ? Marshal.PtrToStringUni(buf, (int)mii.cch) : string.Empty;
                 string? verb = mii.hSubMenu == IntPtr.Zero ? GetVerb(mii.wID) : null;
                 if (string.IsNullOrWhiteSpace(label)) label = verb ?? "(unnamed)";
+                // the handler's icon: hbmpItem, or (older handlers, Windows' Share) the unchecked-state bitmap
+                IntPtr bmp = IsBitmap(mii.hbmpItem) ? mii.hbmpItem : IsBitmap(mii.hbmpUnchecked) ? mii.hbmpUnchecked : IntPtr.Zero;
+                var icon = bmp != IntPtr.Zero ? ShellImaging.HBitmapToSource(bmp) : null;
                 list.Add(new ShellMenuEntry
                 {
                     Label = label,
@@ -174,14 +177,16 @@ public sealed class ShellContextMenu : IDisposable
                     IsDefault = (mii.fState & Native.MFS_DEFAULT) != 0,
                     SubMenu = mii.hSubMenu,
                     Position = i,
-                    // 1…11 are HBMMENU_* system glyphs and -1 is owner-drawn: neither is a bitmap to copy
-                    Icon = (long)mii.hbmpItem > 11 ? ShellImaging.HBitmapToSource(mii.hbmpItem) : null,
+                    Icon = icon,
                 });
             }
         }
         finally { Marshal.FreeHGlobal(buf); }
         return list;
     }
+
+    /// <summary>A real bitmap handle: not empty, not HBMMENU_CALLBACK (-1, owner-drawn), not an HBMMENU_* glyph (1…11). GDI handles are 32-bit, often negative.</summary>
+    private static bool IsBitmap(IntPtr h) { int v = unchecked((int)(long)h); return v != 0 && v != -1 && (v < 1 || v > 11); }
 
     private string? GetVerb(uint id)
     {
