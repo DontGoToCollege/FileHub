@@ -2,6 +2,17 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.48
+
+### Fixed
+- **Content indexing runs at full speed.** Windows was putting FileHub in efficiency mode (it runs from the tray with
+  no window), so on a laptop with fast and slow cores the content pass ran on slow cores at low clock speed, about 3x
+  slower. FileHub now turns efficiency mode off for itself while a content pass runs, and lets Windows decide again
+  afterwards.
+- **Bigger, faster saves during a content pass.** Files are saved up to 2,000 at a time (less for big files) instead
+  of 500, and the search index skips its tidy-up on every save during the pass, then tidies once at the end. Together
+  that's about twice as fast in tests. The progress count now moves in bigger steps.
+
 ## 0.3.47
 
 ### Fixed

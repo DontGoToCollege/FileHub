@@ -263,6 +263,22 @@ public sealed class MetaDb : IDisposable
         return r.Read() && r.GetInt64(0) == modified && r.GetInt64(1) == size;
     }
 
+    /// <summary>
+    /// During a content pass the search tables only collect new segments (no merging on each write, and up to 64 MB of
+    /// text buffered before a segment is written): about twice as fast. Afterwards merging is back on, and Maintain
+    /// (run after every pass) merges what built up. A pass cut short by a crash leaves it off until the next pass ends;
+    /// Maintain still merges every 30 min meanwhile.
+    /// </summary>
+    public void BulkMode(bool on)
+    {
+        lock (_writeLock)
+        {
+            using var c = Open();
+            foreach (var t in new[] { "content_fts", "props_fts" })
+                Exec(c, $"INSERT INTO {t}({t}, rank) VALUES('automerge', {(on ? 0 : 4)}); INSERT INTO {t}({t}, rank) VALUES('crisismerge', {(on ? 64 : 16)}); INSERT INTO {t}({t}, rank) VALUES('hashsize', {(on ? 64 << 20 : 1 << 20)});");
+        }
+    }
+
     /// <summary>"path|modified" of these paths' content and props rows, like the Load…IndexedPaths sets but for a few paths.</summary>
     public (HashSet<string> content, HashSet<string> props) IndexedStamps(IEnumerable<string> paths)
     {

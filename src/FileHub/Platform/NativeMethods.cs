@@ -361,6 +361,23 @@ internal static class Native
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool DeviceIoControl(Microsoft.Win32.SafeHandles.SafeFileHandle h, uint code, ref STORAGE_PROPERTY_QUERY input, int inSize, byte[] output, int outSize, out int returned, IntPtr overlapped);
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PROCESS_POWER_THROTTLING_STATE { public uint Version, ControlMask, StateMask; }
+    [DllImport("kernel32.dll")]
+    private static extern bool SetProcessInformation(IntPtr process, int infoClass, ref PROCESS_POWER_THROTTLING_STATE info, int size);
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetCurrentProcess();
+
+    /// <summary>
+    /// false: never put FileHub in Windows' efficiency mode (slow cores, low clocks), which Windows otherwise does to a
+    /// tray app with no window: it made the content pass ~3x slower on a hybrid CPU (0.3.47). true: Windows decides again.
+    /// </summary>
+    public static void AllowEfficiencyMode(bool allow)
+    {
+        var s = new PROCESS_POWER_THROTTLING_STATE { Version = 1, ControlMask = allow ? 0u : 1u /* EXECUTION_SPEED */, StateMask = 0 };
+        SetProcessInformation(GetCurrentProcess(), 4 /* ProcessPowerThrottling */, ref s, Marshal.SizeOf<PROCESS_POWER_THROTTLING_STATE>());
+    }
+
     /// <summary>
     /// How drive <paramref name="letter"/> is attached (BusType: 17 NVMe, 11 SATA, 7 USB, 12 SD…) and whether it has a
     /// seek penalty (a spinning disk); null where Windows can't say. Needs no admin rights.

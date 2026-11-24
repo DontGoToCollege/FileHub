@@ -227,10 +227,25 @@ public sealed class ContentIndexer : IDisposable
         Candidates = todo.Count;
         Status($"Indexing content 0 / {Candidates:N0}");
 
-        // the next chunk is read while the previous one is written (the write is the slow part on an SSD: ~500 files/s)
-        const int chunk = 500;
-        Task<(List<ContentRow> content, List<PropsRow> props)> Read(int from) =>
-            Task.Run(() => ReadFiles(todo, from, Math.Min(todo.Count, from + chunk) - from, maxBytes, ct), ct);
+        // the next chunk is read while the previous one is written (the write is the slow part). Chunks of up to 2,000 files
+        // or 64 MB of text to read: one bigger write is ~1.5x faster than four of 500 files; the cap keeps big files' text
+        // from piling up in memory
+        var starts = new List<int>();
+        for (int k = 0; k < todo.Count;)
+        {
+            starts.Add(k);
+            long bytes = 0; int end = k;
+            for (; end < todo.Count && end - k < 2000; end++)
+            {
+                long size = todo[end].content ? todo[end].size : 0;   // a photo read only for its details costs no memory
+                if (end > k && bytes + size > 64L << 20) break;
+                bytes += size;
+            }
+            k = end;
+        }
+        starts.Add(todo.Count);
+        Task<(List<ContentRow> content, List<PropsRow> props)> Read(int i) =>
+            Task.Run(() => ReadFiles(todo, starts[i], starts[i + 1] - starts[i], maxBytes, ct), ct);
 
         // one "done" line per drive (last todo index, file count), so each drive's speed shows in the log
         var driveRuns = new List<(int key, int end, int files)>();
@@ -240,18 +255,21 @@ public sealed class ContentIndexer : IDisposable
         int nextDone = 0;
         var driveClock = System.Diagnostics.Stopwatch.StartNew();
 
+        if (todo.Count > 0) { Native.AllowEfficiencyMode(false); _db.BulkMode(true); }
+        try
+        {
         var next = todo.Count > 0 ? Read(0) : null;
         var drained = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // changed files indexed while `next` was being read
-        for (int from = 0; next != null; from += chunk)
+        for (int i = 0; next != null; i++)
         {
             var (content, props) = next.GetAwaiter().GetResult();
             // the chunk may hold an older copy of a file saved meanwhile: the copy read for the change is the current one
             if (drained.Count > 0) { content.RemoveAll(r => drained.Contains(r.path)); props.RemoveAll(r => drained.Contains(r.path)); drained.Clear(); }
-            bool more = from + chunk < todo.Count && !_paused && !_fullPassRequested && !ct.IsCancellationRequested;
-            next = more ? Read(from + chunk) : null;
+            bool more = i + 2 < starts.Count && !_paused && !_fullPassRequested && !ct.IsCancellationRequested;
+            next = more ? Read(i + 1) : null;
             if (content.Count > 0) _db.UpsertContentBatch(content);
             if (props.Count > 0) _db.UpsertPropsBatch(props);
-            Processed = Math.Min(todo.Count, from + chunk);
+            Processed = starts[i + 1];
             Status($"Indexing content {Processed:N0} / {Candidates:N0}");
             for (; nextDone < driveRuns.Count && driveRuns[nextDone].end < Processed; nextDone++, driveClock.Restart())
             {
@@ -262,6 +280,8 @@ public sealed class ContentIndexer : IDisposable
             // files saved meanwhile go first, while the next chunk keeps reading; one batch per chunk, so a noisy disk can't stall the pass
             if (_changed.Reader.TryPeek(out _)) drained.UnionWith(DrainChanged(ct));
         }
+        }
+        finally { if (todo.Count > 0) { Native.AllowEfficiencyMode(true); try { _db.BulkMode(false); } catch (Exception ex) { Log.Warn("Content index: merging back on failed: " + ex.Message); } } }
         IsRunning = false;
         if (_paused) { Status($"Content indexing paused at {Processed:N0} / {Candidates:N0}"); return; }
         if (_fullPassRequested) return;   // cut short for a new pass, which sets its own status: not up to date yet
