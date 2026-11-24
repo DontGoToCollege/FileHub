@@ -115,7 +115,7 @@ public sealed class ListEditorWindow : Window
 
         // what the selected rows can do
         var tools = new WrapPanel { Margin = new Thickness(0, 10, 0, 0) };
-        void Tool(string text, string tip, Action act) { var b = new Button { Content = text, ToolTip = tip, Padding = new Thickness(10, 3, 10, 3), Margin = new Thickness(0, 0, 6, 4) }; b.Click += (_, _) => act(); tools.Children.Add(b); }
+        void Tool(string text, string tip, Action act) { var b = new Button { Content = text, ToolTip = tip, Padding = new Thickness(10, 3, 10, 3), Margin = new Thickness(0, 0, 6, 4) }; b.Click += (_, _) => { act(); _scroll.Focus(); }; tools.Children.Add(b); }   // keys (Delete, arrows, Alt+Up) keep working on the list
         Tool("Move to top", "Move the selected rows to the top", () => MoveSelectedTo(FirstMovableIndex()));
         Tool("Move up", "Alt+Up", () => MoveSelectedBy(-1));
         Tool("Move down", "Alt+Down", () => MoveSelectedBy(+1));

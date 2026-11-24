@@ -2,6 +2,13 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.46
+
+### Fixed
+- **The editor's keys keep working after its buttons.** After "Add separator", "Move to top" and the other buttons
+  under the list, Delete, the arrow keys and Alt+Up / Alt+Down did nothing until you clicked a row, because the
+  button kept the keyboard. The buttons now hand it back to the list.
+
 ## 0.3.45
 
 ### Fixed
