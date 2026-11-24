@@ -167,7 +167,13 @@ public static class ContextMenuBuilder
         }
 
         // Windows shell items
-        if (s.ShellMode != ShellMenuMode.Hidden && !anyVirtual && (paths.Count > 0 || realFolder != null))
+        if (s.ShellMode != ShellMenuMode.Hidden && !anyVirtual && (paths.Count > 0 || realFolder != null) && !Responds(paths.Count > 0 ? paths[0] : realFolder!))
+        {
+            // Windows' menu would wait on the UI thread until the drive spins up (seconds, "not responding")
+            menu.Items.Add(new Separator());
+            menu.Items.Add(new MenuItem { Header = "Windows entries: the drive is waking up, right-click again", IsEnabled = false });
+        }
+        else if (s.ShellMode != ShellMenuMode.Hidden && !anyVirtual && (paths.Count > 0 || realFolder != null))
         {
             ShellContextMenu? shell = null;
             try
@@ -319,6 +325,9 @@ public static class ContextMenuBuilder
         else s.Layouts[win.Scope] = new MenuLayout { Order = rows.Select(r => r.Id).ToList(), Hidden = rows.Where(r => !r.Shown).Select(r => r.Id).ToList() };
         AppSettings.Current.Save();
     }
+
+    /// <summary>The item's drive answers within a quarter second (a sleeping hard drive takes seconds to spin up).</summary>
+    private static bool Responds(string path) => Task.Run(() => File.Exists(path) || Directory.Exists(path)).Wait(250);
 
     private static bool IsDuplicate(ShellMenuEntry e, List<string> hidden)
     {

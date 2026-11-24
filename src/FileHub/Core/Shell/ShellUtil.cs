@@ -11,7 +11,15 @@ namespace FileHub.Core.Shell;
 public static class ShellUtil
 {
     /// <summary>Opens a file with FileHub's own association override if present, otherwise the Windows default.</summary>
+    /// <summary>Opens the item on its own STA thread: on a sleeping hard drive the check and ShellExecute wait seconds for it to spin up, which froze the window.</summary>
     public static void Open(string path, IntPtr hwnd = default)
+    {
+        var t = new Thread(() => OpenNow(path, hwnd)) { IsBackground = true, Name = "Open" };
+        t.SetApartmentState(ApartmentState.STA);
+        t.Start();
+    }
+
+    private static void OpenNow(string path, IntPtr hwnd)
     {
         try
         {

@@ -2,6 +2,19 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.43
+
+### Fixed
+- **No more "not responding" when a hard drive is asleep.** Opening a file, launching a Start-menu result or pin,
+  and right-clicking used to touch the drive on FileHub's window thread, so the whole window froze while a sleeping
+  drive spun up (Windows then offered to end FileHub). Opening and launching now run in the background, so the
+  window stays responsive and the program opens once the drive is awake. If a right-click's drive doesn't answer
+  within a quarter second, the menu opens at once with FileHub's own entries and a note to right-click again for
+  Windows' entries.
+- **The Start menu no longer checks pinned items on disk while opening.** Each open checked every pin and folder
+  on the window thread; on 2026-11-23 that froze the menu for 13 seconds while the thumbnail pass was reading the
+  hard drives. The check now runs in the background and remembers its results, so icons still show straight away.
+
 ## 0.3.42
 
 ### Added

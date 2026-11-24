@@ -15,11 +15,40 @@ namespace FileHub.UI.Start;
 
 public sealed class PinTile : ObservableObject
 {
+    /// <summary>
+    /// What each pinned path is on disk: true = folder, false = file, null = missing. Filled off the UI thread: a check
+    /// can wait seconds on a sleeping hard drive or behind the thumbnail threads (13 s stall on 2026-11-23).
+    /// </summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool?> Kinds = new(StringComparer.OrdinalIgnoreCase);
+    public const string MissingGlyph = "";   // shown for a pinned path that no longer exists
+
     private ImageSource? _icon;
+    private string? _glyph;
     public string Label { get; init; } = "";
     public string Path { get; init; } = "";
     public string Arguments { get; init; } = "";
-    public string? Glyph { get; init; }
+    public string? Glyph { get => _glyph; set => Set(ref _glyph, value); }
+    /// <summary>The path exists, as far as the last background check knows.</summary>
+    public bool Exists => Kinds.TryGetValue(Path, out var k) && k != null;
+    public static bool? KnownKind(string path) => Kinds.TryGetValue(path, out var k) ? k : null;
+    public static bool IsKnown(string path) => Kinds.ContainsKey(path);
+
+    /// <summary>Checks the paths on a background thread, then shows the icon (or the missing glyph) of each tile that changed.</summary>
+    public static void CheckInBackground(IReadOnlyList<PinTile> tiles, Dispatcher ui)
+    {
+        var real = tiles.Where(t => t.Glyph == null || IsKnown(t.Path)).ToList();
+        if (real.Count == 0) return;
+        Task.Run(() =>
+        {
+            foreach (var t in real)
+            {
+                bool? kind = Directory.Exists(t.Path) ? true : File.Exists(t.Path) ? false : null;
+                bool changed = !Kinds.TryGetValue(t.Path, out var old) || old != kind;
+                Kinds[t.Path] = kind;
+                if (changed) ui.BeginInvoke(() => { t.Glyph = kind == null ? MissingGlyph : null; t.OnPropertyChanged(nameof(Icon)); });
+            }
+        });
+    }
     public bool IsFolderShortcut { get; init; }   // from the Windows folders list, not the pinned list
     public string FolderName { get; init; } = "";
     // tile geometry (Tiles style); defaults = the original medium size
@@ -31,8 +60,8 @@ public sealed class PinTile : ObservableObject
     {
         get
         {
-            if (_icon == null && Glyph == null && (File.Exists(Path) || Directory.Exists(Path)))
-                _icon = App.Images.Request(Path, Directory.Exists(Path), Math.Max(32, IconSize), false, 0, img => { _icon = img; OnPropertyChanged(nameof(Icon)); });
+            if (_icon == null && Glyph == null && KnownKind(Path) is bool dir)
+                _icon = App.Images.Request(Path, dir, Math.Max(32, IconSize), false, 0, img => { _icon = img; OnPropertyChanged(nameof(Icon)); });
             return _icon;
         }
     }
@@ -73,8 +102,10 @@ public partial class StartMenuWindow : Window
         {
             if (name == "This PC") { folders.Add(new PinTile { Label = "This PC", Path = "::ThisPC", Glyph = "", IsFolderShortcut = true, FolderName = name }); continue; }
             var p = KnownFolders.Resolve(name);
-            if (p != null && Directory.Exists(p)) folders.Add(new PinTile { Label = name, Path = p, IsFolderShortcut = true, FolderName = name });
+            // a folder the background check found missing is left out (unknown ones show until it runs)
+            if (p != null && !(PinTile.IsKnown(p) && PinTile.KnownKind(p) != true)) folders.Add(new PinTile { Label = name, Path = p, IsFolderShortcut = true, FolderName = name });
         }
+        PinTile.CheckInBackground(pins.Concat(folders).ToList(), Dispatcher);
         bool list = s.Style == StartMenuStyle.List;
         PinnedItems.ItemsSource = list ? null : pins;
         FolderItems.ItemsSource = list ? null : folders;
@@ -107,7 +138,7 @@ public partial class StartMenuWindow : Window
     private static string? GlyphFor(string path) => path switch
     {
         "::Hub" => "", "::Explorer" => "", "::ThisPC" => "", "::Start" => "",
-        _ => path.StartsWith("ms-settings:") ? "" : path.StartsWith("http") ? "" : File.Exists(path) || Directory.Exists(path) ? null : "",
+        _ => path.StartsWith("ms-settings:") ? "" : path.StartsWith("http") ? "" : PinTile.IsKnown(path) && PinTile.KnownKind(path) == null ? PinTile.MissingGlyph : null,   // never touch the disk here; a background check fills it in
     };
 
     // ------------------------------------------------------------------ show / hide
@@ -318,8 +349,7 @@ public partial class StartMenuWindow : Window
             menu.Items.Add(mi);
         }
         Add("Open", () => { HideMenu(); Launch(tile.Path, tile.Arguments); });
-        bool real = File.Exists(tile.Path) || Directory.Exists(tile.Path);
-        if (real) Add("Open file location", () => { HideMenu(); App.ShowExplorer(Path.GetDirectoryName(tile.Path.TrimEnd('\\')) ?? tile.Path, selectPath: tile.Path); });
+        if (tile.Exists) Add("Open file location", () => { HideMenu(); App.ShowExplorer(Path.GetDirectoryName(tile.Path.TrimEnd('\\')) ?? tile.Path, selectPath: tile.Path); });
         menu.Items.Add(new Separator());
         Add("Move to front", () => MovePin(index, 0), index > 0);
         Add("Move earlier", () => MovePin(index, index - 1), index > 0);
@@ -401,9 +431,14 @@ public partial class StartMenuWindow : Window
             case "::ThisPC": App.ShowExplorer("::ThisPC"); return;
             case "::Home": App.ShowExplorer("::Home"); return;
         }
-        if (Directory.Exists(path)) { App.ShowExplorer(path); return; }
-        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ExpandEnvironmentVariables(path), args) { UseShellExecute = true }); }
-        catch (Exception ex) { Log.Warn("Launch failed for " + path + ": " + ex.Message); }
+        // off the UI thread: on a sleeping hard drive the check and the launch wait for it to spin up
+        var ui = Application.Current.Dispatcher;
+        Task.Run(() =>
+        {
+            if (Directory.Exists(path)) { ui.BeginInvoke(() => App.ShowExplorer(path)); return; }
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ExpandEnvironmentVariables(path), args) { UseShellExecute = true }); }   // .NET runs ShellExecute on its own STA thread
+            catch (Exception ex) { Log.Warn("Launch failed for " + path + ": " + ex.Message); }
+        });
     }
 
     private void User_Click(object sender, RoutedEventArgs e) { HideMenu(); if (KnownFolders.Profile is { } p) App.ShowExplorer(p); }
