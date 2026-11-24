@@ -15,6 +15,7 @@ public sealed class ShellMenuEntry
     public bool IsDefault { get; init; }
     public IntPtr SubMenu { get; init; }
     public int Position { get; init; }
+    public System.Windows.Media.ImageSource? Icon { get; init; }   // the handler's own icon (VLC cone, 7-Zip…), as Windows' menu shows it
     public bool HasSubMenu => SubMenu != IntPtr.Zero;
 }
 
@@ -156,7 +157,7 @@ public sealed class ShellContextMenu : IDisposable
                 var mii = new Native.MENUITEMINFO
                 {
                     cbSize = (uint)Marshal.SizeOf<Native.MENUITEMINFO>(),
-                    fMask = Native.MIIM_STRING | Native.MIIM_ID | Native.MIIM_SUBMENU | Native.MIIM_FTYPE | Native.MIIM_STATE,
+                    fMask = Native.MIIM_STRING | Native.MIIM_ID | Native.MIIM_SUBMENU | Native.MIIM_FTYPE | Native.MIIM_STATE | Native.MIIM_BITMAP,
                     dwTypeData = buf, cch = 1023,
                 };
                 if (!Native.GetMenuItemInfoW(hMenu, (uint)i, true, ref mii)) continue;
@@ -173,6 +174,8 @@ public sealed class ShellContextMenu : IDisposable
                     IsDefault = (mii.fState & Native.MFS_DEFAULT) != 0,
                     SubMenu = mii.hSubMenu,
                     Position = i,
+                    // 1…11 are HBMMENU_* system glyphs and -1 is owner-drawn: neither is a bitmap to copy
+                    Icon = (long)mii.hbmpItem > 11 ? ShellImaging.HBitmapToSource(mii.hbmpItem) : null,
                 });
             }
         }

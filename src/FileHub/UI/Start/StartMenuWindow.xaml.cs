@@ -120,9 +120,10 @@ public partial class StartMenuWindow : Window
         }
         Show();
         Position();   // again now the window exists: the first pass had to guess the monitor's DPI
+        // the Win key reached FileHub through its hook, so Windows' foreground lock refuses a plain Activate()
+        // and typing (and the click-away close, which needs Deactivated) would stay with the previous window
+        if (!Native.ForceForeground(new WindowInteropHelper(this).Handle)) Log.Warn("Start menu could not take the foreground");
         Activate();
-        var h = new WindowInteropHelper(this).Handle;
-        Native.SetForegroundWindow(h);
         SearchBox.Focus();
     }
 

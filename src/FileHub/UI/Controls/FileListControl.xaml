@@ -23,7 +23,13 @@
 
         <DataTemplate x:Key="TileTemplate" DataType="{x:Type common:FileItem}">
             <StackPanel Width="{Binding TileWidth, RelativeSource={RelativeSource AncestorType=controls:FileListControl}}">
-                <Image Source="{Binding Icon}" Width="{Binding IconPx}" Height="{Binding IconPx}" Margin="0,6,0,4" HorizontalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
+                <Grid Width="{Binding IconPx}" Height="{Binding IconPx}" Margin="0,6,0,4" HorizontalAlignment="Center">
+                    <!-- inner grid hugs the picture, so the badge sits on the thumbnail's own corner, not the square's -->
+                    <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <Image Source="{Binding Icon}" RenderOptions.BitmapScalingMode="HighQuality"/>
+                        <Image Source="{Binding Badge}" Width="{Binding BadgePx}" Height="{Binding BadgePx}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,2,2" RenderOptions.BitmapScalingMode="HighQuality"/>
+                    </Grid>
+                </Grid>
                 <TextBlock Text="{Binding DisplayName}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" TextAlignment="Center" MaxHeight="36" Margin="4,0" LineHeight="17" LineStackingStrategy="BlockLineHeight" ToolTip="{Binding FullPath}"/>
             </StackPanel>
         </DataTemplate>

@@ -196,7 +196,7 @@ public sealed class ShellImaging
     }
 
     /// <summary>Converts a 32bpp HBITMAP (premultiplied BGRA) to a frozen BitmapSource keeping alpha.</summary>
-    private static BitmapSource? HBitmapToSource(IntPtr hbmp)
+    internal static BitmapSource? HBitmapToSource(IntPtr hbmp)
     {
         if (Native.GetObject(hbmp, Marshal.SizeOf<Native.BITMAP>(), out var bm) == 0) return null;
         int w = bm.bmWidth, h = Math.Abs(bm.bmHeight);
@@ -234,6 +234,24 @@ public sealed class ShellImaging
             Marshal.FreeHGlobal(buffer);
         }
     }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _typeOverlay = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Whether Explorer badges this type's thumbnails with its icon (the default program's, e.g. VLC's cone on videos):
+    /// yes unless the type's ProgID sets an empty TypeOverlay. Cached per extension.
+    /// </summary>
+    public static bool ShowsTypeOverlay(string ext) => _typeOverlay.GetOrAdd(ext, e =>
+    {
+        try
+        {
+            var sb = new System.Text.StringBuilder(260); uint n = 260;
+            if (Native.AssocQueryStringW(0, Native.ASSOCSTR_PROGID, "." + e, null, sb, ref n) != 0 || sb.Length == 0) return true;
+            using var key = Microsoft.Win32.Registry.ClassesRoot.OpenSubKey(sb.ToString());
+            return !(key?.GetValue("TypeOverlay") is string s && s.Length == 0);
+        }
+        catch { return true; }
+    });
 
     /// <summary>Friendly type name ("Text Document") from the shell, cached per extension.</summary>
     public static string GetTypeName(string nameOrPath, bool isDirectory)

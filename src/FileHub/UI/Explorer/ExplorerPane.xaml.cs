@@ -456,7 +456,8 @@ public partial class ExplorerPane : UserControl
     private void NavTree_DragOver(object sender, DragEventArgs e)
     {
         e.Effects = DragDropEffects.None;
-        if (e.Data.GetDataPresent(DataFormats.FileDrop) && e.OriginalSource is DependencyObject d && FindAncestor<TreeViewItem>(d)?.DataContext is NavNode n && !n.Path.StartsWith("::") && n.Path.Length > 0)
+        if (e.Data.GetDataPresent(DataFormats.FileDrop) && e.OriginalSource is DependencyObject d && FindAncestor<TreeViewItem>(d)?.DataContext is NavNode n && !n.Path.StartsWith("::") && n.Path.Length > 0
+            && !FileOperations.TargetInsideSource((string[])e.Data.GetData(DataFormats.FileDrop), n.Path))
             e.Effects = e.KeyStates.HasFlag(DragDropKeyStates.ControlKey) ? DragDropEffects.Copy : DragDropEffects.Move;
         e.Handled = true;
     }
@@ -465,6 +466,7 @@ public partial class ExplorerPane : UserControl
     {
         if (!e.Data.GetDataPresent(DataFormats.FileDrop) || e.OriginalSource is not DependencyObject d || FindAncestor<TreeViewItem>(d)?.DataContext is not NavNode n || n.Path.StartsWith("::")) return;
         var files = (string[])e.Data.GetData(DataFormats.FileDrop);
+        if (FileOperations.TargetInsideSource(files, n.Path)) return;
         OnFilesDropped(files, n.Path, !e.KeyStates.HasFlag(DragDropKeyStates.ControlKey));
         e.Handled = true;
     }

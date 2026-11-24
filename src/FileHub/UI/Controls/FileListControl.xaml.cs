@@ -598,6 +598,7 @@ public partial class FileListControl : UserControl
         e.Effects = ctrl ? DragDropEffects.Copy : sameVolume ? DragDropEffects.Move : DragDropEffects.Copy;
         // dropping into the folder it came from is a no-op
         if (files.Any(f => string.Equals(Path.GetDirectoryName(f), target, StringComparison.OrdinalIgnoreCase)) && !ctrl) e.Effects = DragDropEffects.None;
+        if (FileOperations.TargetInsideSource(files, target)) e.Effects = DragDropEffects.None;
         e.Handled = true;
     }
 
@@ -613,7 +614,7 @@ public partial class FileListControl : UserControl
         var files = (string[])e.Data.GetData(DataFormats.FileDrop);
         string target = DropTarget(e);
         bool move = e.Effects.HasFlag(DragDropEffects.Move) && !e.KeyStates.HasFlag(DragDropKeyStates.ControlKey);
-        if (e.Effects == DragDropEffects.None) return;
+        if (e.Effects == DragDropEffects.None || FileOperations.TargetInsideSource(files, target)) return;
         FilesDropped?.Invoke(files, target, move);
         e.Handled = true;
     }

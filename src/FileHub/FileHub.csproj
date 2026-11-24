@@ -13,7 +13,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>
-    <Version>0.3.39</Version>
+    <Version>0.3.40</Version>
     <Authors>FileHub</Authors>
     <Product>FileHub</Product>
     <Description>Fast, indexed Windows file explorer replacement</Description>

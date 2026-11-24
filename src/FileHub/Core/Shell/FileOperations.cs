@@ -130,4 +130,11 @@ public static class FileOperations
 
     public static bool SameVolume(string a, string b)
         => string.Equals(Path.GetPathRoot(a), Path.GetPathRoot(b), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>True when the drop target is one of the dragged folders or inside one (Windows would refuse: "destination is a subfolder of the source").</summary>
+    public static bool TargetInsideSource(IEnumerable<string> sources, string target)
+    {
+        string t = target.TrimEnd('\\') + "\\";
+        return sources.Any(s => t.StartsWith(s.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase));
+    }
 }

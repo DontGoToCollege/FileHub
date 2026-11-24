@@ -116,7 +116,7 @@ internal static class Native
 
     public const uint MOD_ALT = 1, MOD_CONTROL = 2, MOD_SHIFT = 4, MOD_WIN = 8, MOD_NOREPEAT = 0x4000;
 
-    public const uint MIIM_STATE = 1, MIIM_ID = 2, MIIM_SUBMENU = 4, MIIM_STRING = 0x40, MIIM_FTYPE = 0x100;
+    public const uint MIIM_STATE = 1, MIIM_ID = 2, MIIM_SUBMENU = 4, MIIM_STRING = 0x40, MIIM_BITMAP = 0x80, MIIM_FTYPE = 0x100;
     public const uint MFT_SEPARATOR = 0x800, MFT_OWNERDRAW = 0x100, MFS_DISABLED = 3, MFS_CHECKED = 8, MFS_DEFAULT = 0x1000;
 
     public const uint CMF_NORMAL = 0, CMF_EXPLORE = 4, CMF_EXTENDEDVERBS = 0x100, CMF_ITEMMENU = 0x80, CMF_CANRENAME = 0x10;
@@ -163,6 +163,9 @@ internal static class Native
     [DllImport("user32.dll")] public static extern int GetMenuItemCount(IntPtr hMenu);
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool GetMenuItemInfoW(IntPtr hMenu, uint item, [MarshalAs(UnmanagedType.Bool)] bool fByPosition, ref MENUITEMINFO lpmii);
     [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool SetForegroundWindow(IntPtr hWnd);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool BringWindowToTop(IntPtr hWnd);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, [MarshalAs(UnmanagedType.Bool)] bool fAttach);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
     public const int GWL_EXSTYLE = -20;
     public const long WS_EX_NOACTIVATE = 0x08000000;
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] public static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
@@ -209,6 +212,8 @@ internal static class Native
 
     // ---------------------------------------------------------------- shell32
 
+    public const int ASSOCSTR_PROGID = 20;
+    [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)] public static extern int AssocQueryStringW(int flags, int str, string pszAssoc, string? pszExtra, System.Text.StringBuilder? pszOut, ref uint pcchOut);
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern int SHParseDisplayName(string pszName, IntPtr pbc, out IntPtr ppidl, uint sfgaoIn, out uint psfgaoOut);
     [DllImport("shell32.dll")] public static extern int SHBindToParent(IntPtr pidl, ref Guid riid, out IntPtr ppv, out IntPtr ppidlLast);
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern int SHCreateItemFromParsingName(string pszPath, IntPtr pbc, ref Guid riid, [MarshalAs(UnmanagedType.Interface)] out IShellItemImageFactory ppv);
@@ -306,6 +311,25 @@ internal static class Native
     }
 
     public static bool IsKeyDown(int vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
+
+    /// <summary>
+    /// Brings a window to the foreground even when Windows' foreground lock would refuse (FileHub was
+    /// woken by its keyboard hook, not by input to one of its own windows): joins the current
+    /// foreground thread's input queue for the call, and as a last resort taps Alt, which lifts the lock.
+    /// </summary>
+    public static bool ForceForeground(IntPtr hwnd)
+    {
+        var fg = GetForegroundWindow();
+        if (fg == hwnd) return true;
+        uint me = GetCurrentThreadId(), other = fg == IntPtr.Zero ? 0 : GetWindowThreadProcessId(fg, out _);
+        bool attached = other != 0 && other != me && AttachThreadInput(me, other, true);
+        try { BringWindowToTop(hwnd); SetForegroundWindow(hwnd); }
+        finally { if (attached) AttachThreadInput(me, other, false); }
+        if (GetForegroundWindow() == hwnd) return true;
+        SendKey(VK_MENU);
+        SetForegroundWindow(hwnd);
+        return GetForegroundWindow() == hwnd;
+    }
 
     public static string? GetKnownFolder(Guid id)
     {

@@ -64,11 +64,29 @@ public sealed class FileItem : ObservableObject
         }
     }
 
+    private ImageSource? _badge;
+    private bool _badgeRequested;
+
+    /// <summary>The default program's small icon in a thumbnail's corner, as Explorer draws it (medium icons and up).</summary>
+    public ImageSource? Badge
+    {
+        get
+        {
+            if (_badgeRequested || !_thumb || _iconPx < 48 || IsDirectory || IsVirtual || !FileTypes.HasThumbnail(Extension) || !ShellImaging.ShowsTypeOverlay(Extension)) return _badge;
+            _badgeRequested = true;
+            int px = _iconPx;
+            // a non-thumbnail request is the type's icon, cached once per extension
+            _badge = App.Images.Request(FullPath, false, 32, false, ModifiedUtc.Ticks, img => { if (_iconPx != px) return; _badge = img; OnPropertyChanged(nameof(Badge)); });
+            return _badge;
+        }
+    }
+    public double BadgePx => Math.Clamp(_iconPx / 7.0, 16, 32);
+
     public void SetIconSize(int px, bool thumbnail)
     {
         if (_iconPx == px && _thumb == thumbnail) return;
-        _iconPx = px; _thumb = thumbnail; _icon = null; _requested = false;
-        OnPropertyChanged(nameof(Icon)); OnPropertyChanged(nameof(IconPx));
+        _iconPx = px; _thumb = thumbnail; _icon = null; _requested = false; _badge = null; _badgeRequested = false;
+        OnPropertyChanged(nameof(Icon)); OnPropertyChanged(nameof(IconPx)); OnPropertyChanged(nameof(Badge)); OnPropertyChanged(nameof(BadgePx));
     }
 
     public void SetIcon(ImageSource? icon) { _icon = icon; _requested = true; OnPropertyChanged(nameof(Icon)); }

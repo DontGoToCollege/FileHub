@@ -308,6 +308,7 @@ public static class ContextMenuBuilder
         if (e.IsSeparator) return new Separator();
         var mi = new MenuItem { Header = e.Label.Replace("__", "&&").Replace("&&", "").Replace("&", "_").Replace("", "&"), IsEnabled = e.IsEnabled };
         if (e.IsDefault) mi.FontWeight = FontWeights.SemiBold;
+        if (e.Icon != null) mi.Icon = new System.Windows.Controls.Image { Source = e.Icon, Width = 16, Height = 16 };
         if (e.HasSubMenu)
         {
             mi.Items.Add(new MenuItem { Header = "…", IsEnabled = false });

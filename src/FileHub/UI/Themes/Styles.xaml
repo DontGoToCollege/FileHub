@@ -248,6 +248,39 @@
         <Setter Property="FontFamily" Value="{StaticResource UIFont}"/>
         <Setter Property="Margin" Value="0,4"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <!-- themed box: Windows' default draws a dark tick on a light box, so with a dark (or transparent) background the tick vanished -->
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <Grid Background="{TemplateBinding Background}" SnapsToDevicePixels="True">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Border x:Name="box" Width="16" Height="16" CornerRadius="3" BorderThickness="1" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                Background="{DynamicResource InputBackgroundBrush}" BorderBrush="{DynamicResource TextSecondaryBrush}">
+                            <Grid>
+                                <Path x:Name="tick" Data="M3,8 L6.5,11.5 L13,4.5" Stroke="{DynamicResource AccentTextBrush}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Margin="-1" Visibility="Collapsed"/>
+                                <Rectangle x:Name="dash" Width="8" Height="2" Fill="{DynamicResource AccentTextBrush}" Visibility="Collapsed"/>
+                            </Grid>
+                        </Border>
+                        <ContentPresenter Grid.Column="1" Margin="8,0,0,0" RecognizesAccessKey="True" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="box" Property="BorderBrush" Value="{DynamicResource TextBrush}"/></Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="box" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                            <Setter TargetName="box" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                            <Setter TargetName="tick" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="{x:Null}">
+                            <Setter TargetName="box" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                            <Setter TargetName="box" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                            <Setter TargetName="dash" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
     <Style TargetType="RadioButton">
         <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>

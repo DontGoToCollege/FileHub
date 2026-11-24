@@ -115,6 +115,9 @@ public partial class App : Application
                 case "--rebuild": _ = Index.RebuildAsync(); any = true; break;
                 case "--exit": ExitApp(); return;
                 case "--move-data" when i + 1 < args.Length: MoveDataTo(args[++i], interactive: false); return;
+                case "--snap" when TestMode && i + 2 < args.Length:
+                    // PrintWindow comes back blank while the session isn't composing (locked, screen off); WPF can always render itself
+                    SnapTestWindow(args[i + 1], args[i + 2]); i += 2; any = true; break;
                 case "--set-text" when TestMode && i + 2 < args.Length:
                     // UI Automation's SetValue focuses the box (and so the window); this fills it without any focus change
                     SetTestText(args[i + 1], args[i + 2]); i += 2; any = true; break;
@@ -163,6 +166,19 @@ public partial class App : Application
             if (w.IsVisible && (title == null || w.Title.Contains(title, StringComparison.OrdinalIgnoreCase))
                 && FindVisible<System.Windows.Controls.TextBox>(w, name) is { } box) { box.Text = text; return; }
         Log.Warn("--set-text: no visible text box named " + name);
+    }
+
+    /// <summary>--test: saves the newest visible window whose title contains <paramref name="title"/> as a PNG.</summary>
+    private static void SnapTestWindow(string title, string file)
+    {
+        var w = Current.Windows.Cast<Window>().Reverse().FirstOrDefault(x => x.IsVisible && x.Title.Contains(title, StringComparison.OrdinalIgnoreCase));
+        if (w is not { } root) { Log.Warn("--snap: no visible window titled " + title); return; }
+        var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap((int)root.ActualWidth, (int)root.ActualHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+        rtb.Render(root);
+        var png = new System.Windows.Media.Imaging.PngBitmapEncoder();
+        png.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(rtb));
+        using var fs = File.Create(file);
+        png.Save(fs);
     }
 
     private static T? FindVisible<T>(DependencyObject root, string name) where T : FrameworkElement

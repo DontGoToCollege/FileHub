@@ -2,6 +2,27 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.40
+
+### Added
+- **Program icons in the right-click menu.** Windows' own entries (VLC, 7-Zip, WinRAR, Take Ownership and the like) show
+  the icon their program gives them, as in Windows' menu.
+- **Default-program badge on thumbnails.** In the icon views (medium and up), a file's thumbnail carries its type's
+  small icon in the bottom-right corner, such as VLC's cone on videos, as Explorer draws it. Types whose registration
+  asks for no badge (Explorer leaves those bare too) stay bare.
+
+### Fixed
+- **The Start menu takes the keyboard when the Win key opens it.** Typing goes straight to its search box instead of
+  the window that was in front, and clicking anywhere else closes it, as Windows' and StartIsBack's do.
+- **Checkboxes are readable in dark mode.** Ticks were invisible until the mouse was over the box (the Context menu
+  window was the worst); checkboxes now use the theme, with a filled accent box when ticked.
+- **A folder can't be dropped onto itself or into one of its own subfolders.** The drop is refused (no-drop cursor)
+  instead of Windows' "The destination folder is a subfolder of the source folder".
+
+### Testing
+- `--test` mode has `--snap <title part> <file.png>`, which saves a window as WPF draws it (PrintWindow comes back blank
+  while the screen is locked or off).
+
 ## 0.3.39
 
 ### Added
