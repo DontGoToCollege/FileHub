@@ -514,6 +514,38 @@ public sealed class MetaDb : IDisposable
         }
     }
 
+    /// <summary>
+    /// Rewrites many folders' saved views in one transaction: <paramref name="update"/> gets each folder's current json
+    /// (null = none saved) and returns the new one. Each folder keeps its own row, so later changes to one never touch the others.
+    /// </summary>
+    public void UpdateFolderViews(IReadOnlyList<string> paths, Func<string?, string> update)
+    {
+        lock (_writeLock)
+        {
+            using var c = Open();
+            using var tx = c.BeginTransaction();
+            using var get = c.CreateCommand();
+            get.Transaction = tx;
+            get.CommandText = "SELECT json FROM folder_views WHERE path=$p";
+            var gp = get.Parameters.Add("$p", Microsoft.Data.Sqlite.SqliteType.Text);
+            using var put = c.CreateCommand();
+            put.Transaction = tx;
+            put.CommandText = "INSERT OR REPLACE INTO folder_views(path, json) VALUES($p,$j)";
+            var pp = put.Parameters.Add("$p", Microsoft.Data.Sqlite.SqliteType.Text);
+            var pj = put.Parameters.Add("$j", Microsoft.Data.Sqlite.SqliteType.Text);
+            foreach (var path in paths)
+            {
+                string? old;
+                if (!_views.TryGetValue(path, out old)) { gp.Value = path; old = get.ExecuteScalar() as string; }
+                string json = update(old);
+                pp.Value = path; pj.Value = json;
+                put.ExecuteNonQuery();
+                _views[path] = json;
+            }
+            tx.Commit();
+        }
+    }
+
     public List<string> ListFolderViews()
     {
         var list = new List<string>();

@@ -516,6 +516,41 @@ public partial class ExplorerPane : UserControl
 
     public void Execute(string cmd) => ExecuteFor(cmd, FileList.SelectedItems);
 
+    /// <summary>
+    /// "Set view for this folder and subfolders": writes the view into the folder's and every subfolder's own saved
+    /// view, a one-time copy. Nothing is inherited afterwards, so changing a subfolder later only changes that folder,
+    /// and folders created later start with the default view.
+    /// </summary>
+    private void SetViewForTree(string? root, ViewMode mode)
+    {
+        if (root == null) return;
+        string prefix = root.TrimEnd('\\') + "\\";
+        if (!Tab.IsVirtual && (string.Equals(Tab.Path.TrimEnd('\\'), root.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase) || Tab.Path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+            Tab.SetView(mode);   // this tab is in the tree: show it now
+        var ex = AppSettings.Current.Explorer;
+        string label = ContextMenuBuilder.ViewModes.FirstOrDefault(v => v.Mode == mode).Label ?? mode.ToString();
+        Task.Run(() =>
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var folders = new List<string> { root };
+            try { folders.AddRange(Directory.EnumerateDirectories(root, "*", new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint })); }
+            catch (Exception e) { Platform.Log.Warn($"Set view for subfolders of {root}: {e.Message}"); }
+            try
+            {
+                App.Db.UpdateFolderViews(folders, json =>
+                {
+                    var fv = (json != null ? System.Text.Json.JsonSerializer.Deserialize<FolderView>(json) : null)
+                             ?? new FolderView { SortBy = ex.DefaultSortBy, SortDescending = ex.DefaultSortDescending };   // its sort and columns stay as they were
+                    fv.View = mode;
+                    return System.Text.Json.JsonSerializer.Serialize(fv);
+                });
+                Platform.Log.Info($"View {mode} set for {folders.Count:N0} folders under {root} in {sw.ElapsedMilliseconds} ms");
+                Dispatcher.BeginInvoke(() => StatusText.Text = $"{label} set for {folders.Count:N0} folder{(folders.Count == 1 ? "" : "s")}");
+            }
+            catch (Exception e) { Platform.Log.Warn($"Set view for subfolders of {root} failed: {e.Message}"); }
+        });
+    }
+
     private void ExecuteFor(string cmd, IReadOnlyList<FileItem> sel)
     {
         var paths = sel.Where(i => !i.IsVirtual).Select(i => i.FullPath).ToList();
@@ -567,6 +602,8 @@ public partial class ExplorerPane : UserControl
             case "zoomout": ZoomView(-1); break;
             default:
                 if (cmd.StartsWith("view:") && Enum.TryParse<ViewMode>(cmd[5..], out var vm)) Tab.SetView(vm);
+                else if (cmd.StartsWith("viewtree:") && Enum.TryParse<ViewMode>(cmd[9..], out var tv))
+                    SetViewForTree(sel.Count == 1 && sel[0].IsDirectory && !sel[0].IsVirtual ? sel[0].FullPath : folder, tv);
                 else if (cmd.StartsWith("sort:")) PickSort(cmd[5..]);
                 else if (cmd == "sortdir:asc") Tab.SetSort(Tab.SortBy, false);
                 else if (cmd == "sortdir:desc") Tab.SetSort(Tab.SortBy, true);

@@ -80,6 +80,14 @@ public static class ContextMenuBuilder
         var paths = items.Where(i => !i.IsVirtual).Select(i => i.FullPath).ToList();
         string? realFolder = folder != null && !folder.StartsWith("::") ? folder : null;
 
+        // copies a view into the folder's and every subfolder's own saved view (Explorer only: it handles "viewtree:")
+        MenuItem ViewTreeMenu()
+        {
+            var m = new MenuItem { Header = "Set view for this folder and subfolders" };
+            foreach (var (label, mode, _) in ViewModes) { var mi = new MenuItem { Header = label }; mi.Click += (_, _) => command("viewtree:" + mode); m.Items.Add(mi); }
+            return m;
+        }
+
         MenuItem Add(string header, string cmd, string? gesture = null, bool bold = false, bool enabled = true)
         {
             var mi = new MenuItem { Header = header, InputGestureText = gesture, IsEnabled = enabled };
@@ -95,6 +103,7 @@ public static class ContextMenuBuilder
             foreach (var (label, mode, gesture) in ViewModes)
             { var mi = new MenuItem { Header = label, InputGestureText = gesture }; mi.Click += (_, _) => command("view:" + mode); view.Items.Add(mi); }
             menu.Items.Add(view);
+            if (realFolder != null) menu.Items.Add(ViewTreeMenu());
             var sort = new MenuItem { Header = "Sort by" };
             FillSortMenu(sort, command, sortChoices ?? AppSettings.Current.Explorer.SortChoices, sortBy, sortDesc);
             menu.Items.Add(sort);
@@ -118,6 +127,7 @@ public static class ContextMenuBuilder
             {
                 Add("Open", "open", "Enter", bold: true);
                 if (!anyVirtual) Add("Open in new tab", "newtab");
+                if (!anyVirtual && realFolder != null) menu.Items.Add(ViewTreeMenu());
             }
             else if (single)
             {
@@ -263,8 +273,11 @@ public static class ContextMenuBuilder
         for (int i = 0; i < layout.Order.Count; i++) rank.TryAdd(layout.Order[i], i);
         var hidden = new HashSet<string>(layout.Hidden);
         // entries the layout doesn't know yet (new shell items…) go after the ordered ones, in their own order
-        var kept = items.Select((o, i) => (o, id: ids[i], r: rank.TryGetValue(ids[i], out var k) ? k : layout.Order.Count + i))
-            .Where(x => !hidden.Contains(x.id)).OrderBy(x => x.r).Select(x => x.o).ToList();
+        var placed = items.Select((o, i) => (o, id: ids[i], r: rank.TryGetValue(ids[i], out var k) ? k : layout.Order.Count + i)).ToList();
+        // separators the owner added in the editor
+        placed.AddRange(layout.Order.Select((id, i) => (id, i)).Where(x => x.id.StartsWith(ListEditorWindow.AddedSeparatorPrefix))
+            .Select(x => ((object)new Separator(), x.id, x.i)));
+        var kept = placed.Where(x => !hidden.Contains(x.id)).OrderBy(x => x.r).Select(x => x.o).ToList();
         menu.Items.Clear();
         foreach (var o in kept)
         {
@@ -303,20 +316,21 @@ public static class ContextMenuBuilder
         {
             bool sep = id.StartsWith("---");
             var src = sources.GetValueOrDefault(id);
-            return new EditRow { Id = id, Label = sep ? "──────── separator ────────" : id, Shown = shown, From = sep ? "" : src.From ?? "FileHub", Icon = src.Icon };
+            return new EditRow { Id = id, Label = sep ? ListEditorWindow.SeparatorLabel : id, Shown = shown, From = sep ? "" : src.From ?? "FileHub", Icon = src.Icon };
         }
         List<EditRow> Defaults(string? _) => full.Select(id => Row(id)).ToList();
         List<EditRow> Load(string? scope)
         {
             if (scope == null || !s.Layouts.TryGetValue(scope, out var l)) return Defaults(scope);
             var rank = l.Order.Select((id, i) => (id, i)).GroupBy(x => x.id).ToDictionary(g => g.Key, g => g.First().i);
-            return full.Select((id, i) => (id, r: rank.TryGetValue(id, out var k) ? k : l.Order.Count + i)).OrderBy(x => x.r)
+            var ids = full.Concat(l.Order.Where(id => id.StartsWith(ListEditorWindow.AddedSeparatorPrefix)).Distinct()).ToList();   // + separators added here
+            return ids.Select((id, i) => (id, r: rank.TryGetValue(id, out var k) ? k : l.Order.Count + i)).OrderBy(x => x.r)
                 .Select(x => Row(x.id, !l.Hidden.Contains(x.id))).ToList();
         }
         // open on the most specific scope that already has a layout, else the most specific one
         string start = scopes.FirstOrDefault(sc => s.Layouts.ContainsKey(sc.Key)).Key ?? scopes[0].Key;
         var win = new ListEditorWindow("Context menu", "Tick the entries to show in this menu and put them in the order you want. "
-            + "\"From\" is the program that added each entry. Entries that appear later (new programs) go at the end.", scopes, start, Load, Defaults, hotkeys: false)
+            + "\"From\" is the program that added each entry. Entries that appear later (new programs) go at the end.", scopes, start, Load, Defaults, hotkeys: false, separators: true)
         { Owner = Window.GetWindow(owner) };
         if (win.ShowDialog() != true || win.Scope == null) return;
         var rows = win.Rows;

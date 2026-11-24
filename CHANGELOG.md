@@ -2,6 +2,25 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.44
+
+### Added
+- **Set a view for a whole folder tree.** Right-click a folder (or empty space in one) → "Set view for this folder
+  and subfolders" → Details, Large icons… FileHub writes that view into the folder's and every subfolder's own
+  saved view once. It is a copy, not a rule: change any subfolder's view later and only that folder changes, and
+  folders made afterwards start with your default view. Sort order and columns of each folder are kept.
+- **Context menu editor (and Sort options): select, drag and move many rows.** Click a row to select it (it's
+  highlighted), Ctrl+click and Shift+click (or Shift+arrows, Ctrl+A) to select more. Drag the selected rows to a new
+  place; the list scrolls when you drag to its top or bottom edge. Buttons move the selection to the top, up, down or
+  to the bottom (Alt+Up / Alt+Down too). Ticking one of several selected rows ticks them all; Space toggles them.
+- **Add your own separators** in the context menu editor ("Add separator" puts one below the selected row;
+  "Remove separator" or Delete removes ones you added; Windows' own separators are unticked instead).
+
+### Changed
+- **Scrollbars keep a thumb you can grab.** In a folder of thousands of files the scrollbar thumb used to shrink to a
+  few pixels; it now stays at least about 56 pixels tall (shorter lists keep their larger thumb).
+- In the editors, clicking a row's name now selects the row instead of ticking it; tick with the box on the left.
+
 ## 0.3.43
 
 ### Fixed
