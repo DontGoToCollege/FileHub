@@ -121,6 +121,10 @@ public partial class App : Application
                 case "--set-text" when TestMode && i + 2 < args.Length:
                     // UI Automation's SetValue focuses the box (and so the window); this fills it without any focus change
                     SetTestText(args[i + 1], args[i + 2]); i += 2; any = true; break;
+                case "--menu-sources" when TestMode && i + 1 < args.Length:
+                    // logs which program each right-click entry of this file comes from (the menu editor's From column)
+                    var sources = Core.Shell.ShellMenuSources.Resolve(new[] { args[++i] }, null);
+                    Log.Info("Menu sources: " + string.Join("; ", sources.Select(kv => kv.Key + " = " + kv.Value))); any = true; break;
                 default:
                     if (a.StartsWith("--")) break;
                     any = true;

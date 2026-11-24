@@ -2,6 +2,22 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.42
+
+### Added
+- **The right-click menu editor ("Context menu…") says where each entry comes from.** A new "From" column names
+  the program that added it (WinRAR, 7-Zip, VLC media player, StartIsBack, FileHub, Windows…), with the entry's
+  icon beside its name, so "Extract Here" is plainly WinRAR's. Entries a registry tweak added (like Take
+  Ownership) show the command they run, such as "Command (cmd.exe)". FileHub finds this by asking each non-Windows
+  menu handler which entries it adds (about 20–80 ms when the editor opens).
+
+### Fixed
+- **Backspace goes back right after you open a folder.** Opening a folder (Enter or double-click) replaced the
+  list along with the row that had keyboard focus, so focus was left nowhere and Backspace / Alt+Left did nothing
+  until you clicked. The list now keeps the keyboard when its folder changes.
+- **Typing a name jumps to it.** Windows' built-in type-search in the list caught every letter (and compared it
+  with full paths), so FileHub's own "type the first letters to select" never ran. It now works: type "A", Enter.
+
 ## 0.3.41
 
 ### Fixed

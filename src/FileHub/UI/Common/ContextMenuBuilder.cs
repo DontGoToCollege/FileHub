@@ -159,7 +159,7 @@ public static class ContextMenuBuilder
             menu.Items.Add(new Separator());
             foreach (var ci in custom)
             {
-                var mi = new MenuItem { Header = ci.Label };
+                var mi = new MenuItem { Header = ci.Label, Tag = "Your custom item" };
                 var captured = ci;
                 mi.Click += (_, _) => ShellUtil.RunCustom(captured, paths, realFolder);
                 menu.Items.Add(mi);
@@ -191,7 +191,7 @@ public static class ContextMenuBuilder
                     if (s.ShellMode == ShellMenuMode.Submenu)
                     {
                         menu.Items.Add(new Separator());
-                        var more = new MenuItem { Header = "Show more options" };
+                        var more = new MenuItem { Header = "Show more options", Tag = ShellMenuSources.Windows };
                         menu.Items.Add(more);
                         target = more;
                     }
@@ -216,11 +216,12 @@ public static class ContextMenuBuilder
         // the owner's layout for this kind of thing, then "Context menu…" (never hideable, so the editor stays reachable)
         var scopes = MenuScopes(items, background);
         var full = EntryIds(menu);
+        var fullItems = menu.Items.Cast<object>().ToList();
         var layouts = s.Layouts;
         if (scopes.Select(sc => layouts.GetValueOrDefault(sc.Key)).FirstOrDefault(l => l != null) is { } layout) ApplyLayout(menu, layout);
         menu.Items.Add(new Separator());
         var edit = new MenuItem { Header = "Context menu…" };
-        edit.Click += (_, _) => EditLayout(owner, scopes, full);
+        edit.Click += (_, _) => EditLayout(owner, scopes, full, Sources(full, fullItems, paths, background ? realFolder : null));
         menu.Items.Add(edit);
         return menu;
     }
@@ -267,23 +268,49 @@ public static class ContextMenuBuilder
         while (menu.Items.Count > 0 && menu.Items[^1] is Separator) menu.Items.RemoveAt(menu.Items.Count - 1);
     }
 
+    /// <summary>Which program each top-level entry comes from (FileHub, Windows, WinRAR…) and its icon, by entry id.</summary>
+    private static Dictionary<string, (string From, System.Windows.Media.ImageSource? Icon)> Sources(List<string> ids, List<object> items, List<string> paths, string? backgroundFolder)
+    {
+        var result = new Dictionary<string, (string, System.Windows.Media.ImageSource?)>();
+        Dictionary<string, string>? shell = null;
+        for (int i = 0; i < items.Count; i++)
+        {
+            if (items[i] is not MenuItem mi) continue;
+            string from;
+            if (mi.Tag is ShellMenuEntry e)
+            {
+                shell ??= ShellMenuSources.Resolve(paths, backgroundFolder);
+                from = e.Verb != null && shell.TryGetValue("verb:" + e.Verb.ToLowerInvariant(), out var p) || shell.TryGetValue(ShellMenuSources.Norm(e.Label), out p) ? p : ShellMenuSources.Windows;
+            }
+            else from = mi.Tag as string ?? "FileHub";
+            result.TryAdd(ids[i], (from, (mi.Icon as System.Windows.Controls.Image)?.Source));
+        }
+        return result;
+    }
+
     /// <summary>The "Context menu…" window: show/hide and reorder this menu's entries for this kind of thing.</summary>
-    private static void EditLayout(FrameworkElement owner, (string Key, string Label)[] scopes, List<string> full)
+    private static void EditLayout(FrameworkElement owner, (string Key, string Label)[] scopes, List<string> full,
+        Dictionary<string, (string From, System.Windows.Media.ImageSource? Icon)> sources)
     {
         var s = AppSettings.Current.ContextMenu;
-        string Label(string id) => id.StartsWith("---") ? "──────── separator ────────" : id;
-        List<EditRow> Defaults(string? _) => full.Select(id => new EditRow { Id = id, Label = Label(id) }).ToList();
+        EditRow Row(string id, bool shown = true)
+        {
+            bool sep = id.StartsWith("---");
+            var src = sources.GetValueOrDefault(id);
+            return new EditRow { Id = id, Label = sep ? "──────── separator ────────" : id, Shown = shown, From = sep ? "" : src.From ?? "FileHub", Icon = src.Icon };
+        }
+        List<EditRow> Defaults(string? _) => full.Select(id => Row(id)).ToList();
         List<EditRow> Load(string? scope)
         {
             if (scope == null || !s.Layouts.TryGetValue(scope, out var l)) return Defaults(scope);
             var rank = l.Order.Select((id, i) => (id, i)).GroupBy(x => x.id).ToDictionary(g => g.Key, g => g.First().i);
             return full.Select((id, i) => (id, r: rank.TryGetValue(id, out var k) ? k : l.Order.Count + i)).OrderBy(x => x.r)
-                .Select(x => new EditRow { Id = x.id, Label = Label(x.id), Shown = !l.Hidden.Contains(x.id) }).ToList();
+                .Select(x => Row(x.id, !l.Hidden.Contains(x.id))).ToList();
         }
         // open on the most specific scope that already has a layout, else the most specific one
         string start = scopes.FirstOrDefault(sc => s.Layouts.ContainsKey(sc.Key)).Key ?? scopes[0].Key;
         var win = new ListEditorWindow("Context menu", "Tick the entries to show in this menu and put them in the order you want. "
-            + "Windows' own entries are listed by name; ones that appear later (new programs) go at the end.", scopes, start, Load, Defaults, hotkeys: false)
+            + "\"From\" is the program that added each entry. Entries that appear later (new programs) go at the end.", scopes, start, Load, Defaults, hotkeys: false)
         { Owner = Window.GetWindow(owner) };
         if (win.ShowDialog() != true || win.Scope == null) return;
         var rows = win.Rows;
@@ -307,6 +334,7 @@ public static class ContextMenuBuilder
     {
         if (e.IsSeparator) return new Separator();
         var mi = new MenuItem { Header = e.Label.Replace("__", "&&").Replace("&&", "").Replace("&", "_").Replace("", "&"), IsEnabled = e.IsEnabled };
+        mi.Tag = e;   // the editor's "From" column looks up its program
         if (e.IsDefault) mi.FontWeight = FontWeights.SemiBold;
         if (e.Icon != null) mi.Icon = new System.Windows.Controls.Image { Source = e.Icon, Width = 16, Height = 16 };
         if (e.HasSubMenu)

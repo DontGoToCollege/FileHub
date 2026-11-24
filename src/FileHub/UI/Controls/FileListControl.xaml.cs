@@ -64,6 +64,7 @@ public partial class FileListControl : UserControl
         get => _items;
         set
         {
+            KeepKeyboardFocus();
             _items = value;
             ApplyIconSize();
             List.ItemsSource = value;
@@ -78,6 +79,7 @@ public partial class FileListControl : UserControl
         var selected = new HashSet<string>(List.SelectedItems.Cast<FileItem>().Select(i => i.FullPath), StringComparer.OrdinalIgnoreCase);
         var sv = FindScrollViewer(List);
         double offset = sv?.VerticalOffset ?? 0;
+        KeepKeyboardFocus();
         _items = value;
         ApplyIconSize();
         List.ItemsSource = value;
@@ -85,6 +87,20 @@ public partial class FileListControl : UserControl
         if (selected.Count > 0)
             foreach (var it in value) if (selected.Contains(it.FullPath)) List.SelectedItems.Add(it);
         if (sv != null && offset > 0) Dispatcher.BeginInvoke(() => sv.ScrollToVerticalOffset(offset), DispatcherPriority.Loaded);
+    }
+
+    /// <summary>
+    /// Call before swapping the items: the focused row goes with the old listing, which left keyboard focus nowhere,
+    /// so Backspace / Alt+Left did nothing until a click. Gives it back to the list if nothing else took it.
+    /// </summary>
+    private void KeepKeyboardFocus()
+    {
+        if (!List.IsKeyboardFocusWithin) return;
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (List.IsKeyboardFocusWithin) return;
+            if (Keyboard.FocusedElement is null || Keyboard.FocusedElement is Visual v && v.IsAncestorOf(List)) List.Focus();
+        }, DispatcherPriority.Loaded);
     }
 
     private static ScrollViewer? FindScrollViewer(DependencyObject root)

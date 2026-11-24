@@ -14,6 +14,9 @@ public sealed class EditRow
     public bool Movable = true;
     /// <summary>null = this row has no hotkey box.</summary>
     public string? Hotkey;
+    /// <summary>The program the entry comes from (context menu editor); the "From" column shows when any row has one.</summary>
+    public string? From;
+    public System.Windows.Media.ImageSource? Icon;
 }
 
 /// <summary>
@@ -26,7 +29,7 @@ public sealed class ListEditorWindow : Window
     private List<EditRow> _rows;
     private readonly StackPanel _list = new();
     private readonly Func<string?, List<EditRow>> _load, _defaults;
-    private readonly bool _hotkeys;
+    private readonly bool _hotkeys, _from;
 
     public string? Scope { get; private set; }
     public List<EditRow> Rows => _rows;
@@ -38,7 +41,8 @@ public sealed class ListEditorWindow : Window
     {
         _load = load; _defaults = defaults; _hotkeys = hotkeys; Scope = scope;
         _rows = load(scope);
-        Title = title; Width = hotkeys ? 640 : 520; Height = 680; MinWidth = 420; MinHeight = 360;
+        _from = _rows.Any(r => r.From != null);
+        Title = title; Width = hotkeys || _from ? 640 : 520; Height = 680; MinWidth = 420; MinHeight = 360;
         WindowStartupLocation = WindowStartupLocation.CenterOwner; ShowInTaskbar = false;
         SetResourceReference(BackgroundProperty, "WindowBackgroundBrush");
         SetResourceReference(ForegroundProperty, "TextBrush");
@@ -92,6 +96,7 @@ public sealed class ListEditorWindow : Window
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(_hotkeys ? 170 : 0) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(_from ? 160 : 0) });
         g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(76) });
         return g;
     }
@@ -100,7 +105,7 @@ public sealed class ListEditorWindow : Window
     {
         var g = NewRowGrid();
         void Cell(string text, int col) { var t = new TextBlock { Text = text, Opacity = 0.7, Margin = new Thickness(0, 0, 0, 4) }; Grid.SetColumn(t, col); g.Children.Add(t); }
-        Cell("Show", 0); Cell("Name", 1); if (_hotkeys) Cell("Hotkey", 2); Cell("Order", 3);
+        Cell("Show", 0); Cell("Name", 1); if (_hotkeys) Cell("Hotkey", 2); if (_from) Cell("From", 3); Cell("Order", 4);
         return g;
     }
 
@@ -120,9 +125,17 @@ public sealed class ListEditorWindow : Window
                 cb.Unchecked += (_, _) => row.Shown = false;
                 g.Children.Add(cb);
             }
-            var label = new TextBlock { Text = row.Label, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Opacity = row.Id.StartsWith("---") ? 0.6 : 1, Background = System.Windows.Media.Brushes.Transparent };
-            if (cb != null) label.MouseLeftButtonUp += (_, _) => cb.IsChecked = cb.IsChecked != true;   // clicking the name ticks too
-            Grid.SetColumn(label, 1); g.Children.Add(label);
+            var label = new TextBlock { Text = row.Label, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Opacity = row.Id.StartsWith("---") ? 0.6 : 1 };
+            var name = new DockPanel { Background = System.Windows.Media.Brushes.Transparent };
+            if (_from) name.Children.Add(new Image { Source = row.Icon, Width = 16, Height = 16, Margin = new Thickness(0, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center });
+            name.Children.Add(label);
+            if (cb != null) name.MouseLeftButtonUp += (_, _) => cb.IsChecked = cb.IsChecked != true;   // clicking the name ticks too
+            Grid.SetColumn(name, 1); g.Children.Add(name);
+            if (_from && !string.IsNullOrEmpty(row.From))
+            {
+                var from = new TextBlock { Text = row.From, Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(8, 0, 8, 0), ToolTip = row.From };
+                Grid.SetColumn(from, 3); g.Children.Add(from);
+            }
             if (_hotkeys && row.Hotkey != null)
             {
                 var box = new TextBox { Text = row.Hotkey, IsReadOnlyCaretVisible = false, Margin = new Thickness(0, 0, 8, 0), ToolTip = "Click, then press the key combination. Backspace or Delete clears it." };
@@ -144,7 +157,7 @@ public sealed class ListEditorWindow : Window
                 int idx = i;
                 moves.Children.Add(MoveButton("", "Move up", () => Move(idx, -1)));
                 moves.Children.Add(MoveButton("", "Move down", () => Move(idx, +1)));
-                Grid.SetColumn(moves, 3); g.Children.Add(moves);
+                Grid.SetColumn(moves, 4); g.Children.Add(moves);
             }
             _list.Children.Add(g);
         }

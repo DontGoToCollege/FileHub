@@ -48,6 +48,7 @@
                   MouseRightButtonUp="List_MouseRightButtonUp"
                   PreviewKeyDown="List_PreviewKeyDown"
                   TextInput="List_TextInput"
+                  IsTextSearchEnabled="False"
                   DragOver="List_DragOver" Drop="List_Drop"
                   KeyboardNavigation.TabNavigation="Once">
             <ListView.View>
