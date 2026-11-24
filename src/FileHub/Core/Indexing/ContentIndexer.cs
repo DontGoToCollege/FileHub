@@ -10,6 +10,9 @@ using FileHub.Core.Search;
 using FileHub.Core.Settings;
 using FileHub.Core.Shell;
 using FileHub.Platform;
+using ToRead = (int id, string path, string ext, long modified, long size, bool content, bool meta, int drive);
+using ContentRow = (string path, long modified, long size, string body);
+using PropsRow = (string path, long modified, string json, string text);
 
 namespace FileHub.Core.Indexing;
 
@@ -93,6 +96,15 @@ public sealed class ContentIndexer : IDisposable
     private volatile bool _fullPassRequested;
     public void RequestFullPass() => _fullPassRequested = true;
 
+    /// <summary>Empties the content index (seconds to minutes on a big one, so it says so) and starts reading every file again.</summary>
+    public void ClearAndRebuild()
+    {
+        Status("Clearing the content index…");
+        _db.ClearContent();   // also ends a schema-2 upgrade in progress: it checks the version every batch
+        Status("Content index cleared; rebuilding…");
+        RequestFullPass();
+    }
+
     private void Status(string s) { StatusText = s; StatusChanged?.Invoke(); }
 
     private void Loop()
@@ -107,12 +119,12 @@ public sealed class ContentIndexer : IDisposable
                 // a damaged meta.db (seen by a search or a write here) is replaced, then every file is read again
                 if (_db.RecoverRequested) { Status("Repairing the content index…"); _db.Recover(); RequestFullPass(); Status("Content indexing idle"); }
                 // one try per run: if it fails, indexing carries on with the old table (writes work on both) and it resumes next start
-                if (!upgraded) { upgraded = true; Status("Upgrading the content index (one time)…"); _db.UpgradeContentFts(ct); Status("Content indexing idle"); }
+                if (!upgraded) { upgraded = true; _db.UpgradeContentFts(ct, (done, total) => Status($"Upgrading the content index (one time) {done:N0} / {total:N0}")); Status("Content indexing idle"); }
                 if (_paused) { Thread.Sleep(1000); continue; }
                 if (!_settings.Index.ContentIndexing && !_settings.Index.MetadataIndexing) { Thread.Sleep(2000); continue; }
 
                 // individual changed files first
-                if (DrainChanged(ct)) continue;
+                if (DrainChanged(ct).Count > 0) continue;
 
                 if (_fullPassRequested || (DateTime.UtcNow - lastPass).TotalMinutes > 30)
                 {
@@ -131,14 +143,13 @@ public sealed class ContentIndexer : IDisposable
         }
     }
 
-    /// <summary>Indexes up to 200 queued changed files/folders; false when nothing was queued.</summary>
-    private bool DrainChanged(CancellationToken ct)
+    /// <summary>Indexes up to 200 queued changed files/folders; returns the files looked at (empty when nothing was queued).</summary>
+    private HashSet<string> DrainChanged(CancellationToken ct)
     {
         var changedBatch = new List<string>();
         while (changedBatch.Count < 200 && _changed.Reader.TryRead(out var p)) changedBatch.Add(p);
-        if (changedBatch.Count == 0) return false;
-        ProcessPaths(changedBatch.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), ct);
-        return true;
+        if (changedBatch.Count == 0) return new HashSet<string>();
+        return ProcessPaths(changedBatch.Distinct(StringComparer.OrdinalIgnoreCase).ToList(), ct);
     }
 
     private static readonly Dictionary<char, (int rank, bool oneAtATime)> _drives = new();
@@ -181,7 +192,7 @@ public sealed class ContentIndexer : IDisposable
         var haveProps = _settings.Index.MetadataIndexing ? _db.LoadPropsIndexedPaths() : new HashSet<string>();
 
         // only what still needs reading
-        var todo = new List<(int id, string path, string ext, long modified, long size, bool content, bool meta, int drive)>();
+        var todo = new List<ToRead>();
         var totals = new Dictionary<char, int>();   // per drive: files to read, done or not
         var entries = index.Entries; int count = index.Count;
         for (int i = 0; i < count; i++)
@@ -216,39 +227,10 @@ public sealed class ContentIndexer : IDisposable
         Candidates = todo.Count;
         Status($"Indexing content 0 / {Candidates:N0}");
 
-        // the next chunk is read while the previous one is written (the write is the slow part on an SSD: ~500 files/s).
-        // SSD files are read on several threads; a hard drive's files one at a time in folder order, one reader per drive:
-        // parallel readers sent its head between folders and halved its speed (0.3.25)
+        // the next chunk is read while the previous one is written (the write is the slow part on an SSD: ~500 files/s)
         const int chunk = 500;
-        int readers = Math.Clamp(Environment.ProcessorCount / 2, 2, 8);
-        Task<(List<(string, long, long, string)> content, List<(string, long, string, string)> props)> Read(int from) => Task.Run(() =>
-        {
-            var content = new System.Collections.Concurrent.ConcurrentBag<(string, long, long, string)>();
-            var props = new System.Collections.Concurrent.ConcurrentBag<(string, long, string, string)>();
-            var range = Enumerable.Range(from, Math.Min(todo.Count, from + chunk) - from).ToList();
-            var spinning = range.Where(k => DriveOf(todo[k].path).oneAtATime).GroupBy(k => char.ToUpperInvariant(todo[k].path[0]))
-                .Select(g => Task.Run(() => { foreach (int k in g) { ct.ThrowIfCancellationRequested(); ReadOne(k); } }, ct)).ToArray();
-            Parallel.ForEach(range.Where(k => !DriveOf(todo[k].path).oneAtATime), new ParallelOptions { MaxDegreeOfParallelism = readers, CancellationToken = ct }, ReadOne);
-            Task.WaitAll(spinning, ct);
-            return (content.ToList(), props.ToList());
-
-            void ReadOne(int k)
-            {
-                var t = todo[k];
-                try
-                {
-                    if (t.content) content.Add((t.path, t.modified, t.size, ExtractText(t.path, t.ext, maxBytes)));
-                    if (t.meta)
-                    {
-                        var p = PropertyReader.Read(t.path);
-                        if (p.Count == 0) { props.Add((t.path, t.modified, "{}", "")); return; }
-                        string text = string.Join(" \n", p.Where(kv => kv.Key is not ("Width" or "Height" or "FrameWidth" or "FrameHeight" or "Bitrate")).Select(kv => kv.Value));
-                        props.Add((t.path, t.modified, JsonSerializer.Serialize(p), text));
-                    }
-                }
-                catch (Exception ex) { Log.Warn("Index read failed for " + t.path + ": " + ex.Message); }
-            }
-        }, ct);
+        Task<(List<ContentRow> content, List<PropsRow> props)> Read(int from) =>
+            Task.Run(() => ReadFiles(todo, from, Math.Min(todo.Count, from + chunk) - from, maxBytes, ct), ct);
 
         // one "done" line per drive (last todo index, file count), so each drive's speed shows in the log
         var driveRuns = new List<(int key, int end, int files)>();
@@ -259,9 +241,12 @@ public sealed class ContentIndexer : IDisposable
         var driveClock = System.Diagnostics.Stopwatch.StartNew();
 
         var next = todo.Count > 0 ? Read(0) : null;
+        var drained = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // changed files indexed while `next` was being read
         for (int from = 0; next != null; from += chunk)
         {
             var (content, props) = next.GetAwaiter().GetResult();
+            // the chunk may hold an older copy of a file saved meanwhile: the copy read for the change is the current one
+            if (drained.Count > 0) { content.RemoveAll(r => drained.Contains(r.path)); props.RemoveAll(r => drained.Contains(r.path)); drained.Clear(); }
             bool more = from + chunk < todo.Count && !_paused && !_fullPassRequested && !ct.IsCancellationRequested;
             next = more ? Read(from + chunk) : null;
             if (content.Count > 0) _db.UpsertContentBatch(content);
@@ -274,13 +259,8 @@ public sealed class ContentIndexer : IDisposable
                 double s = driveClock.Elapsed.TotalSeconds;
                 Log.Info($"Drive {todo[end].path[0]}: contents done, {files:N0} files in {(s < 120 ? $"{s:N1} s" : $"{s / 60:N0} min")} ({files / Math.Max(0.1, s):N0} files/s)");
             }
-            // files saved meanwhile go first; the chunk being read may hold an older copy of one, so it's read again after
-            if (_changed.Reader.TryPeek(out _))
-            {
-                try { next?.Wait(); } catch { }
-                DrainChanged(ct);   // one batch per chunk, so a noisy disk can't stall the pass either
-                if (more) next = Read(from + chunk);
-            }
+            // files saved meanwhile go first, while the next chunk keeps reading; one batch per chunk, so a noisy disk can't stall the pass
+            if (_changed.Reader.TryPeek(out _)) drained.UnionWith(DrainChanged(ct));
         }
         IsRunning = false;
         if (_paused) { Status($"Content indexing paused at {Processed:N0} / {Candidates:N0}"); return; }
@@ -289,13 +269,14 @@ public sealed class ContentIndexer : IDisposable
         Status($"Content index up to date ({stats.contentRows:N0} documents, {stats.propsRows:N0} with metadata)");
     }
 
-    private void ProcessPaths(List<string> paths, CancellationToken ct)
+    /// <summary>Indexes changed files (a folder: the files inside it); returns the files looked at.</summary>
+    private HashSet<string> ProcessPaths(List<string> paths, CancellationToken ct)
     {
         var contentExts = new HashSet<string>(_settings.Index.ContentExtensions, StringComparer.OrdinalIgnoreCase);
         var metaExts = new HashSet<string>(_settings.Index.MetadataExtensions, StringComparer.OrdinalIgnoreCase);
         long maxBytes = Math.Max(1, _settings.Index.ContentMaxMB) * 1024L * 1024L;
-        var contentBatch = new List<(string, long, long, string)>();
-        var propsBatch = new List<(string, long, string, string)>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var files = new List<ToRead>();
         foreach (var path in ExpandFolders(paths, contentExts, metaExts))
         {
             ct.ThrowIfCancellationRequested();
@@ -304,26 +285,60 @@ public sealed class ContentIndexer : IDisposable
                 if (!File.Exists(path)) { if (!Directory.Exists(path)) _db.RemovePath(path); continue; }   // gone: drop it and, for a folder, its children
                 var fi = new FileInfo(path);
                 string ext = FileTypes.ExtensionOf(fi.Name);
-                if (_settings.Index.ContentIndexing && contentExts.Contains(ext) && fi.Length <= maxBytes)
-                    contentBatch.Add((path, fi.LastWriteTimeUtc.Ticks, fi.Length, ExtractText(path, ext, maxBytes)));
-                if (_settings.Index.MetadataIndexing && metaExts.Contains(ext))
-                {
-                    var props = PropertyReader.Read(path);
-                    propsBatch.Add((path, fi.LastWriteTimeUtc.Ticks, JsonSerializer.Serialize(props), string.Join(" \n", props.Values)));
-                }
+                bool content = _settings.Index.ContentIndexing && contentExts.Contains(ext) && fi.Length <= maxBytes;
+                bool meta = _settings.Index.MetadataIndexing && metaExts.Contains(ext);
+                if (!content && !meta || !seen.Add(path)) continue;
+                files.Add((-1, path, ext, fi.LastWriteTimeUtc.Ticks, fi.Length, content, meta, 0));
             }
             catch (Exception ex) { Log.Warn("Re-index failed for " + path + ": " + ex.Message); }
-            // a moved or renamed big folder is written 500 files at a time: never all its text in memory, and the
-            // write lock (which saving a folder view or closing a window waits on) is only ever held briefly
-            if (contentBatch.Count + propsBatch.Count >= 500) Flush();
         }
-        Flush();
-
-        void Flush()
+        // a repeated event or a folder reported again (e.g. after a rebuild) is already indexed as it is now: nothing to read
+        var (haveContent, haveProps) = _db.IndexedStamps(seen);
+        files = files.Select(f => f with { content = f.content && !haveContent.Contains(f.path + "|" + f.modified), meta = f.meta && !haveProps.Contains(f.path + "|" + f.modified) })
+                     .Where(f => f.content || f.meta).ToList();
+        // read like the full pass and written 500 files at a time: never a big moved folder's text all in memory, and the
+        // write lock (which saving a folder view or closing a window waits on) only ever held briefly
+        for (int from = 0; from < files.Count; from += 500)
         {
-            if (contentBatch.Count > 0) _db.UpsertContentBatch(contentBatch);
-            if (propsBatch.Count > 0) _db.UpsertPropsBatch(propsBatch);
-            contentBatch.Clear(); propsBatch.Clear();
+            var (content, props) = ReadFiles(files, from, Math.Min(500, files.Count - from), maxBytes, ct);
+            if (content.Count > 0) _db.UpsertContentBatch(content);
+            if (props.Count > 0) _db.UpsertPropsBatch(props);
+        }
+        return seen;
+    }
+
+    private static readonly int Readers = Math.Clamp(Environment.ProcessorCount / 2, 2, 8);
+
+    /// <summary>
+    /// Reads files [from, from+count) of the list. SSD files on several threads; a hard drive's one at a time in list order,
+    /// one reader per drive: parallel readers sent its head between folders and halved its speed (0.3.25).
+    /// </summary>
+    private static (List<ContentRow> content, List<PropsRow> props) ReadFiles(List<ToRead> todo, int from, int count, long maxBytes, CancellationToken ct)
+    {
+        var content = new System.Collections.Concurrent.ConcurrentBag<ContentRow>();
+        var props = new System.Collections.Concurrent.ConcurrentBag<PropsRow>();
+        var range = Enumerable.Range(from, count).ToList();
+        var spinning = range.Where(k => DriveOf(todo[k].path).oneAtATime).GroupBy(k => char.ToUpperInvariant(todo[k].path[0]))
+            .Select(g => Task.Run(() => { foreach (int k in g) { ct.ThrowIfCancellationRequested(); ReadOne(k); } }, ct)).ToArray();
+        Parallel.ForEach(range.Where(k => !DriveOf(todo[k].path).oneAtATime), new ParallelOptions { MaxDegreeOfParallelism = Readers, CancellationToken = ct }, ReadOne);
+        Task.WaitAll(spinning, ct);
+        return (content.ToList(), props.ToList());
+
+        void ReadOne(int k)
+        {
+            var t = todo[k];
+            try
+            {
+                if (t.content) content.Add((t.path, t.modified, t.size, ExtractText(t.path, t.ext, maxBytes)));
+                if (t.meta)
+                {
+                    var p = PropertyReader.Read(t.path);
+                    if (p.Count == 0) { props.Add((t.path, t.modified, "{}", "")); return; }
+                    string text = string.Join(" \n", p.Where(kv => kv.Key is not ("Width" or "Height" or "FrameWidth" or "FrameHeight" or "Bitrate")).Select(kv => kv.Value));
+                    props.Add((t.path, t.modified, JsonSerializer.Serialize(p), text));
+                }
+            }
+            catch (Exception ex) { Log.Warn("Index read failed for " + t.path + ": " + ex.Message); }
         }
     }
 

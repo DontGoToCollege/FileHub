@@ -2,6 +2,18 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.47
+
+### Fixed
+- **Content indexing is much faster while files keep changing.** Every time a file changed during a pass, the pass
+  stopped, read the changed files one at a time, then read the batch it had just finished all over again. On a busy
+  computer that happened after almost every batch, so it crawled along at about 50-70 files a second on an NVMe drive.
+  Changed files are now read in parallel while the pass carries on, the batch isn't read twice, and a file that's
+  already indexed as it is now is skipped.
+- **The one-time content index upgrade shows its progress.** It used to say only "Upgrading the content index" with
+  no count, so it looked stuck. It now counts up ("12,500 / 300,000"). Clearing the content index also says it's
+  clearing, then rebuilding, instead of looking like nothing happened.
+
 ## 0.3.46
 
 ### Fixed

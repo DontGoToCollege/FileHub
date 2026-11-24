@@ -120,6 +120,6 @@ public partial class IndexPage : UserControl, ISavablePage, IRefreshablePage
     private void ClearContent_Click(object sender, RoutedEventArgs e)
     {
         if (MessageBox.Show("Delete all indexed file contents and metadata? They will be re-indexed in the background.", "FileHub", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
-        Task.Run(() => { App.Db.ClearContent(); App.Content.RequestFullPass(); }).ContinueWith(_ => Dispatcher.BeginInvoke(RefreshPage));
+        Task.Run(App.Content.ClearAndRebuild).ContinueWith(_ => Dispatcher.BeginInvoke(RefreshPage));
     }
 }

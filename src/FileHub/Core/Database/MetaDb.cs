@@ -114,9 +114,10 @@ public sealed class MetaDb : IDisposable
     /// second at most; searches keep using the old table until the swap). Resumes where it stopped after a restart.
     /// Runs on the content indexer's thread, the only writer of the content tables.
     /// </summary>
-    public void UpgradeContentFts(CancellationToken ct)
+    public void UpgradeContentFts(CancellationToken ct, Action<long, long> progress)
     {
-        using (var c = Open()) if (Scalar(c, "PRAGMA user_version") >= 2) return;
+        long total;
+        using (var c = Open()) { if (Scalar(c, "PRAGMA user_version") >= 2) return; total = Scalar(c, "SELECT count(*) FROM content_meta"); }
         Log.Info("Upgrading the content index to schema 2 (one time, in the background; search keeps working)");
         var sw = System.Diagnostics.Stopwatch.StartNew();
         long copied = 0;
@@ -145,6 +146,8 @@ public sealed class MetaDb : IDisposable
                     copied += cmd.ExecuteNonQuery() - 1;   // minus the cursor row
                 }
                 tx.Commit();
+                // documents done so far, this run and earlier ones (FTS rowid = content_meta rowid)
+                progress(Scalar(c, "SELECT count(*) FROM content_meta WHERE rowid <= $c", null, next), total);
             }
         }
     }
@@ -258,6 +261,23 @@ public sealed class MetaDb : IDisposable
         cmd.Parameters.AddWithValue("$p", path);
         using var r = cmd.ExecuteReader();
         return r.Read() && r.GetInt64(0) == modified && r.GetInt64(1) == size;
+    }
+
+    /// <summary>"path|modified" of these paths' content and props rows, like the Load…IndexedPaths sets but for a few paths.</summary>
+    public (HashSet<string> content, HashSet<string> props) IndexedStamps(IEnumerable<string> paths)
+    {
+        var content = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var props = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using var c = Open();
+        using var a = c.CreateCommand(); a.CommandText = "SELECT modified FROM content_meta WHERE path=$p"; var ap = a.Parameters.Add("$p", SqliteType.Text);
+        using var b = c.CreateCommand(); b.CommandText = "SELECT modified FROM props WHERE path=$p"; var bp = b.Parameters.Add("$p", SqliteType.Text);
+        foreach (var path in paths)
+        {
+            ap.Value = bp.Value = path;
+            if (a.ExecuteScalar() is long m) content.Add(path + "|" + m);
+            if (b.ExecuteScalar() is long n) props.Add(path + "|" + n);
+        }
+        return (content, props);
     }
 
     public HashSet<string> LoadContentIndexedPaths()
