@@ -55,6 +55,7 @@ public partial class FileListControl : UserControl
         Loaded += (_, _) => ApplyView();
         _marqueeScroll.Tick += (_, _) => MarqueeAutoScroll();
         List.LostMouseCapture += (_, _) => EndMarquee();
+        List.IsKeyboardFocusWithinChanged += (_, e) => { if (e.NewValue is false) KeepKeyboardFocus(); };
     }
 
     // ---------------------------------------------------------------- items
@@ -64,7 +65,6 @@ public partial class FileListControl : UserControl
         get => _items;
         set
         {
-            KeepKeyboardFocus();
             _items = value;
             ApplyIconSize();
             List.ItemsSource = value;
@@ -79,7 +79,6 @@ public partial class FileListControl : UserControl
         var selected = new HashSet<string>(List.SelectedItems.Cast<FileItem>().Select(i => i.FullPath), StringComparer.OrdinalIgnoreCase);
         var sv = FindScrollViewer(List);
         double offset = sv?.VerticalOffset ?? 0;
-        KeepKeyboardFocus();
         _items = value;
         ApplyIconSize();
         List.ItemsSource = value;
@@ -90,15 +89,16 @@ public partial class FileListControl : UserControl
     }
 
     /// <summary>
-    /// Call before swapping the items: the focused row goes with the old listing, which left keyboard focus nowhere,
-    /// so Backspace / Alt+Left did nothing until a click. Gives it back to the list if nothing else took it.
+    /// The list just lost keyboard focus. When its rows are rebuilt (new folder, another view: Large icons, Details…)
+    /// the focused row goes away and focus lands nowhere, so Backspace / typing did nothing until a click. If nothing
+    /// else took it and the window is still active, the list takes it back. Never in an inactive window: focusing
+    /// there could pull it to the front.
     /// </summary>
     private void KeepKeyboardFocus()
     {
-        if (!List.IsKeyboardFocusWithin) return;
         Dispatcher.BeginInvoke(() =>
         {
-            if (List.IsKeyboardFocusWithin) return;
+            if (List.IsKeyboardFocusWithin || Window.GetWindow(this) is not { IsActive: true } || !IsVisible) return;
             if (Keyboard.FocusedElement is null || Keyboard.FocusedElement is Visual v && v.IsAncestorOf(List)) List.Focus();
         }, DispatcherPriority.Loaded);
     }

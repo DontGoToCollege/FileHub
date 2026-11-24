@@ -2,6 +2,14 @@
 
 Each version's program is kept in `Versions\Archive` and on the GitHub Releases page; its source is in the git history.
 
+## 0.3.45
+
+### Fixed
+- **Backspace and typing keep working when a folder opens in another view.** Going from a Details folder into a
+  Large icons one (or back) rebuilt the list and left keyboard focus nowhere again, so Backspace and type-to-select
+  did nothing until a click (0.3.42 only covered a folder with the same view). The list now takes focus back
+  whenever it loses it to nothing while its window is active.
+
 ## 0.3.44
 
 ### Added
