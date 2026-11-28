@@ -13,7 +13,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <LangVersion>latest</LangVersion>
-    <Version>0.3.48</Version>
+    <Version>0.3.49</Version>
     <Authors>FileHub</Authors>
     <Product>FileHub</Product>
     <Description>Fast, indexed Windows file explorer replacement</Description>
@@ -27,8 +27,9 @@
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <IncludeAllContentForSelfExtract>false</IncludeAllContentForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
-    <PublishReadyToRun>true</PublishReadyToRun>
+    <!-- No compression: a compressed single file unpacks every assembly into RAM at start (over 100 MB more). -->
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+    <PublishReadyToRun>false</PublishReadyToRun>
     <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
 
